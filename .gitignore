@@ -715,6 +715,28 @@
 /include/vki/Makefile
 /include/vki/Makefile.in
 
+# /krabcake/
+/krabcake/*.so
+/krabcake/.deps
+/krabcake/krabcake-*-darwin
+/krabcake/krabcake-*-linux
+/krabcake/krabcake-*-solaris
+/krabcake/krabcake-*-freebsd
+/krabcake/Makefile
+/krabcake/Makefile.in
+
+# /krabcake/docs/
+/krabcake/docs/Makefile.in
+/krabcake/docs/Makefile
+
+# /krabcake/tests/
+/krabcake/tests/Makefile
+/krabcake/tests/Makefile.in
+/krabcake/tests/*.stderr.diff*
+/krabcake/tests/*.stderr.out
+/krabcake/tests/*.stdout.diff*
+/krabcake/tests/*.stdout.out
+
 # /lackey/
 /lackey/*.so
 /lackey/.deps
