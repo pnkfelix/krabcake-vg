@@ -12,6 +12,7 @@ TOOLS = \
 		massif \
 		dhat \
 		lackey \
+		krabcake \
 		none
 
 EXP_TOOLS = \

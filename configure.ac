@@ -5382,6 +5382,8 @@ AC_CONFIG_FILES([
    dhat/tests/Makefile
    lackey/Makefile
    lackey/tests/Makefile
+   krabcake/Makefile
+   krabcake/tests/Makefile
    none/Makefile
    none/tests/Makefile
    none/tests/scripts/Makefile
