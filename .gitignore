@@ -1,6 +1,9 @@
 *.o
 *~
 
+# FIXME we should make rust code build into different target area
+/krabcake/rs_hello/target
+
 # /
 /.in_place
 /.vs
