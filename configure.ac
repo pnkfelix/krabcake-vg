@@ -5311,6 +5311,13 @@ CXXFLAGS=$safe_CXXFLAGS
 AM_CONDITIONAL([HAVE_SHARED_POINTER_ANNOTATION],
                [test x$ac_have_shared_pointer_annotation = xyes])
 
+AC_PATH_PROG([CARGO], [cargo], [notfound])
+AS_IF([test "$CARGO" = "notfound"], [AC_MSG_ERROR([cargo is required])])
+
+AC_PATH_PROG([RUSTC], [rustc], [notfound])
+AS_IF([test "$RUSTC" = "notfound"], [AC_MSG_ERROR([rustc is required])])
+
+
 
 #----------------------------------------------------------------------------
 # Ok.  We're done checking.

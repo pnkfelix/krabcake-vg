@@ -32,8 +32,11 @@
 
 #include "krabcake.h" /* for client requests */
 
+extern void hello_world(void); // declare the Rust function
+
 static void kc_post_clo_init(void)
 {
+   hello_world();
 }
 
 static
