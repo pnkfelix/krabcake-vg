@@ -28,12 +28,84 @@
 
 #include "pub_tool_basics.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_libcassert.h"
 #include "pub_tool_tooliface.h"
 
 #include "krabcake.h" /* for client requests */
 
+#include <stdint.h>
+
+// declare the Rust function
+extern void hello_world(
+   unsigned (*printn)(char const *msg, unsigned len),
+   unsigned (*printi)(int32_t i),
+   unsigned (*printu)(uint32_t u));
+
+static unsigned printi(int32_t i) {
+   unsigned printed = VG_(printf)("%d", i);
+   return printed;
+}
+
+static unsigned printu(uint32_t u) {
+   unsigned printed = VG_(printf)("%u", u);
+   return printed;
+}
+
+static unsigned printn(char const *s, unsigned limit) {
+   // VG_(printf)("printn(s: `%s`, limit: %u)\n", s, limit);
+   const unsigned BUF_LEN = 128;
+   HChar buf[BUF_LEN+1];
+   unsigned lim = limit;
+   unsigned total_printed = 0;
+   unsigned chunk;
+   unsigned offset = 0;
+   // Invariant: positive lim means offset does not run off of `s`.
+   while (lim > 0 && (s+offset)[0] != '\0') {
+      chunk = ((lim+1) < BUF_LEN) ? (lim+1) : BUF_LEN;
+
+      // VG_(printf)("s+offset: `%s` limit: %u chunk: %u\n", s + offset, limit, chunk);
+
+      // Notes: snprintf and vsnprintf write at most `size`
+      // bytes *including* the terminating null byte that
+      // they always include. Thus, this will print at most `chunk - 1`
+      // bytes from the source string, which is why we use `lim + 1`
+      // to initalize `chunk` above.
+      signed sn_retval = VG_(snprintf)(buf, chunk, "%s", s + offset);
+      tl_assert(sn_retval >= 0);
+      // VG_(printf)("s+offset: `%s` limit: %u chunk: %u buf: `%s` sn_retval: %u\n", s + offset, limit, chunk, buf, sn_retval);
+
+      // Valgrind's variants of [v]snprintf "differ" from C99: the return value
+      // will be clamped to the provided buffer size S. If that *is* the
+      // returned value, then the terminating null is written to index S-1.
+      //
+      // `sn_retval` can be zero, e.g. if there is an `\0` embedded in the message
+      // at offset zero, which prematurely terminates it.
+      //
+      // But no matter what, the snprintf call above should have terminated the
+      // `buf` with a `\0`.
+      tl_assert(sn_retval <= chunk);
+      unsigned copied;
+      if (sn_retval == chunk) {
+         copied = sn_retval - 1;
+      } else {
+         copied = sn_retval;
+      }
+      tl_assert(buf[copied] == '\0');
+      offset += copied;
+      tl_assert(copied <= lim);
+      lim -= copied;
+
+      unsigned printed = VG_(printf)("%s", buf);
+      tl_assert(printed >= 0);
+      total_printed += printed;
+   }
+   // VG_(printf)("total_printed: %u limit: %u chunk: %u\n", total_printed, limit, chunk);
+   return total_printed;
+}
+
 static void kc_post_clo_init(void)
 {
+   hello_world(printn, printi, printu);
 }
 
 static
