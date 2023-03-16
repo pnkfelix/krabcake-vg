@@ -9,10 +9,18 @@ extern "C" {
 }
 */
 #[no_mangle]
-pub extern "C" fn hello_world() {
-    // println!("Hello World!");
-    // let msg = CStr::from_bytes_with_nul(b"Hello World!\n\0").unwrap();
-    // unsafe { printf(msg.as_ptr()); }
+pub extern "C" fn hello_world(
+    printn: fn(*const c_char, n: usize) -> usize,
+    printi: fn(i: i32) -> usize,
+    printu: fn(u: u32) -> usize,
+) {
+    let msg: &[u8] = b"Hello world (from `rs_hello/src/lib.rs`)! ";
+    let printed = printn(msg.as_ptr() as *const c_char, msg.len());
+    let msg = b"printed: ";
+    printn(msg.as_ptr() as *const c_char, msg.len());
+    printu(printed as u32);
+    let msg: &[u8] = b"\n";
+    printn(msg.as_ptr() as *const c_char, msg.len());
 }
 
 #[panic_handler]
