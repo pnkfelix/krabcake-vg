@@ -153,10 +153,11 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 
    switch(arg[0]) {
    case VG_USERREQ__BORROW_MUT: {
-      VG_(dmsg)("kc_handle_client_request, handle BORROW_MUT %llx %llx\n",
-                arg[1], arg[2]);
+      VG_(dmsg)("kc_handle_client_request, handle BORROW_MUT %llx (<- return value) %llx %llx %llx %llx\n",
+                arg[1], arg[2], arg[3], arg[4], arg[5]);
       *ret = arg[1];
       handled = True;
+      break;
    }
    case VG_USERREQ__BORROW_SHR: {
       VG_(dmsg)("kc_handle_client_request, handle BORROW_SHR");
@@ -184,6 +185,12 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
    }
    case VG_USERREQ__RETAG_RAW: {
       VG_(dmsg)("kc_handle_client_request, handle RETAG_RAW");
+      break;
+   }
+   case VG_USERREQ__INTRINSICS_ASSUME: {
+      VG_(dmsg)("kc_handle_client_request, handle INTRINSICS_ASSUME %llx %llx %llx %llx %llx\n",
+                arg[1], arg[2], arg[3], arg[4], arg[5]);
+      handled = True;
       break;
    }
    default:
