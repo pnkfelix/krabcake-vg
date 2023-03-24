@@ -1,14 +1,9 @@
-#![feature(core_intrinsics, lang_items)]
+#![feature(core_intrinsics, lang_items, c_size_t)]
 #![no_std]
 #![allow(unused_imports)]
 
-use core::ffi::{c_char,c_int,CStr};
+use core::ffi::{c_char,c_int,CStr,c_size_t,c_void};
 use core::panic::PanicInfo;
-/*
-extern "C" {
-    fn printf(format: *const c_char, ...) -> c_int;
-}
-*/
 
 #[no_mangle]
 pub extern "C" fn hello_world(
@@ -27,9 +22,8 @@ pub extern "C" fn hello_world(
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    // let _msg =
-    // let _ = CStr::from_bytes_with_nul(b"Panicked!\n\0");//.unwrap();
-    // unsafe { printf(msg.as_ptr()); }
+    let msg = CStr::from_bytes_with_nul(b"Panicked!\n\0").unwrap();
+    unsafe { libc_stuff::printf(msg.as_ptr()); }
     core::intrinsics::abort()
 }
 
@@ -38,19 +32,6 @@ fn rust_eh_personality() {
     core::intrinsics::abort()
 }
 
-/*
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
-*/
+// pnkfelix got tired of fighting with the linker
+// "if you cannot beat 'em, join 'em."
+mod libc_stuff;
