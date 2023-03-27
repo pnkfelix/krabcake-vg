@@ -124,7 +124,9 @@ static void kc_fini(Int exitcode)
 }
 
 static Bool kc_process_cmd_line_options(const HChar* arg)
-{}
+{
+   return True;
+}
 
 static void kc_print_usage(void)
 {
@@ -142,8 +144,6 @@ static void kc_print_debug_usage(void)
 
 static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 {
-   Int   i;
-   Addr  bad_addr;
    Bool  handled = False;
 
    if (!VG_IS_TOOL_USERREQ('K','C',arg[0]))
@@ -154,7 +154,7 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
    switch(arg[0]) {
    case VG_USERREQ__BORROW_MUT: {
       VG_(dmsg)("kc_handle_client_request, handle BORROW_MUT %llx (<- return value) %llx %llx %llx %llx\n",
-                arg[1], arg[2], arg[3], arg[4], arg[5]);
+                (ULong)arg[1], (ULong)arg[2], (ULong)arg[3], (ULong)arg[4], (ULong)arg[5]);
       *ret = arg[1];
       handled = True;
       break;
@@ -189,7 +189,7 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
    }
    case VG_USERREQ__INTRINSICS_ASSUME: {
       VG_(dmsg)("kc_handle_client_request, handle INTRINSICS_ASSUME %llx %llx %llx %llx %llx\n",
-                arg[1], arg[2], arg[3], arg[4], arg[5]);
+                (ULong)arg[1], (ULong)arg[2], (ULong)arg[3], (ULong)arg[4], (ULong)arg[5]);
       handled = True;
       break;
    }
