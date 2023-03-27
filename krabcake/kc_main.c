@@ -205,6 +205,50 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
    return handled;
 }
 
+/*------------------------------------------------------------*/
+/*--- Register-memory event handlers                       ---*/
+/*------------------------------------------------------------*/
+
+static void kc_copy_mem_to_reg ( CorePart part, ThreadId tid, Addr a,
+                                 PtrdiffT guest_state_offset, SizeT size )
+{
+   VG_(dmsg)("kc_copy_mem_to_reg\n");
+}
+
+static void kc_copy_reg_to_mem ( CorePart part, ThreadId tid,
+                                 PtrdiffT guest_state_offset, Addr a,
+                                 SizeT size )
+{
+   VG_(dmsg)("kc_copy_reg_to_mem\n");
+}
+
+static
+void kc_pre_mem_read ( CorePart part, ThreadId tid, const HChar* s,
+                       Addr base, SizeT size )
+{
+   // VG_(dmsg)("kc_pre_mem_read %s base=%p size=%x (%d)\n", s, base, size, size);
+}
+
+static
+void kc_pre_mem_read_asciiz ( CorePart part, ThreadId tid,
+                              const HChar* s, Addr str )
+{
+   // VG_(dmsg)("kc_pre_mem_read_asciiz\n");
+}
+
+static
+void kc_pre_mem_write ( CorePart part, ThreadId tid, const HChar* s,
+                        Addr base, SizeT size )
+{
+   // VG_(dmsg)("kc_pre_mem_write\n");
+}
+
+static
+void kc_post_mem_write(CorePart part, ThreadId tid, Addr a, SizeT len)
+{
+   // VG_(dmsg)("kc_post_mem_write\n");
+}
+
 static void kc_pre_clo_init(void)
 {
    VG_(details_name)            ("Krabcake");
@@ -225,6 +269,14 @@ static void kc_pre_clo_init(void)
                                    kc_print_usage,
                                    kc_print_debug_usage);
    VG_(needs_client_requests)     (kc_handle_client_request);
+
+   VG_(track_copy_mem_to_reg)     (kc_copy_mem_to_reg);
+   VG_(track_copy_reg_to_mem)     (kc_copy_reg_to_mem);
+   VG_(track_pre_mem_read)        (kc_pre_mem_read);
+   VG_(track_pre_mem_read_asciiz) (kc_pre_mem_read_asciiz);
+   VG_(track_pre_mem_write)       (kc_pre_mem_write);
+   VG_(track_post_mem_write)      (kc_post_mem_write);
+
 /*
    VG_(needs_sanity_checks)       (kc_cheap_sanity_check,
                                    kc_expensive_sanity_check);
