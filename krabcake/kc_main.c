@@ -113,6 +113,16 @@ static void kc_post_clo_init(void)
    hello_world(printn, printi, printu);
 }
 
+static void trace_wrtmp()
+{
+   VG_(printf)("trace_wrtmp\n");
+}
+
+static void trace_llsc()
+{
+   VG_(printf)("trace_llsc\n");
+}
+
 static
 IRSB* kc_instrument ( VgCallbackClosure* closure,
                       IRSB* sbIn,
@@ -121,6 +131,7 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
                       const VexArchInfo* archinfo_host,
                       IRType gWordTy, IRType hWordTy )
 {
+   IRDirty*   di;
    IRSB*      sbOut;
    IRTypeEnv* tyenv = sbIn->tyenv;
 
@@ -146,6 +157,13 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
          if (data->tag == Iex_Load) {
             /* FIXME */
          }
+         di = unsafeIRDirty_0_N(
+            0,
+            "trace_wrtmp",
+            VG_(fnptr_to_fnentry)( &trace_wrtmp ),
+            mkIRExprVec_0()
+            );
+         addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
          addStmtToIRSB( sbOut, st );
          break;
       }
@@ -199,6 +217,13 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
             dataTy = typeOfIRExpr(tyenv, st->Ist.LLSC.storedata);
             /* FIXME */
          }
+         di = unsafeIRDirty_0_N(
+            0,
+            "trace_llsc",
+            VG_(fnptr_to_fnentry)( &trace_llsc ),
+            mkIRExprVec_0()
+            );
+         addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
          addStmtToIRSB( sbOut, st );
          break;
       }
