@@ -113,9 +113,9 @@ static void kc_post_clo_init(void)
    hello_world(printn, printi, printu);
 }
 
-static void trace_wrtmp()
+static void trace_wrtmp_load(Addr addr, SizeT size)
 {
-   VG_(printf)("trace_wrtmp\n");
+   VG_(printf)("trace_wrtmp_load addr=%08llx size=%llu\n", addr, size);
 }
 
 static void trace_llsc()
@@ -155,15 +155,19 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
          IRExpr* data = st->Ist.WrTmp.data;
          IRType  type = typeOfIRExpr(tyenv, data);
          if (data->tag == Iex_Load) {
+            IRExpr   *load_addr = data->Iex.Load.addr;
+            IRType    load_ty   = data->Iex.Load.ty;
+            IREndness load_end  = data->Iex.Load.end;
+            Int       load_size = sizeofIRType(load_ty);
             /* FIXME */
+            di = unsafeIRDirty_0_N(
+               0,
+               "trace_wrtmp_load",
+               VG_(fnptr_to_fnentry)( &trace_wrtmp_load ),
+               mkIRExprVec_2(load_addr, mkIRExpr_HWord(load_size))
+               );
+            addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
          }
-         di = unsafeIRDirty_0_N(
-            0,
-            "trace_wrtmp",
-            VG_(fnptr_to_fnentry)( &trace_wrtmp ),
-            mkIRExprVec_0()
-            );
-         addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
          addStmtToIRSB( sbOut, st );
          break;
       }
