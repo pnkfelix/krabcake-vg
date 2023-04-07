@@ -115,7 +115,7 @@ static void kc_post_clo_init(void)
 
 static void trace_wrtmp_load(Addr addr, SizeT size)
 {
-   VG_(printf)("trace_wrtmp_load addr=%08llx size=%llu\n", addr, size);
+   // VG_(printf)("trace_wrtmp_load addr=%08llx size=%llu\n", addr, size);
 }
 
 static void trace_llsc()
