@@ -38,7 +38,7 @@ unsafe impl Sync for ValgrindAllocator {}
 
 unsafe impl GlobalAlloc for ValgrindAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let cc: &[u8] = b"cc"; // TODO: Set a unique identifier here?
+        let cc: &[u8] = b"cc\0"; // TODO: Set a unique identifier here?
         vgPlain_malloc(cc.as_ptr() as *const c_char, layout.size()) as *mut u8
     }
 
