@@ -113,6 +113,53 @@ static void kc_post_clo_init(void)
    hello_world(printn, printi, printu);
 }
 
+/*------------------------------------------------------------*/
+/*--- shadow state tracking                                ---*/
+/*------------------------------------------------------------*/
+
+/* This is all inspired from basic infrastructure presented in MemCheck.
+
+    |   33222222222211111111110000000000
+bit |   10987654321098765432109876543210
+        ================================
+        PPPPPPPPPPPPPPPPssssssssssssssss
+        ~~~~~~~~~~~~~~~~
+          primary index ~~~~~~~~~~~~~~~~
+                         secondary index
+    
+    |   6666555555555544444444443333333333222222222211111111110000000000
+bit |   3210987654321098765432109876543210987654321098765432109876543210
+        ================================================================
+        zzzzzzzzzzzzzzzzzzzzzzzzzzzzPPPPPPPPPPPPPPPPPPPPssssssssssssssss
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        slow index to sparse aux     ~~~~~~~~~~~~~~~~~~~~
+         (usually zero, hopefully)      primary index    ~~~~~~~~~~~~~~~~
+                                                         secondary index
+*/
+
+#if VG_WORDSIZE == 4
+
+/* cover the entire address space */
+#  define N_PRIMARY_BITS  16
+
+#else
+
+/* Just handle the first 128G fast and the rest via auxiliary primaries. */
+#  define N_PRIMARY_BITS  21
+
+#endif
+
+/* Do not change this (must remain as power of 2).
+   Only change N_PRIMARY_BITS above. */
+#define N_PRIMARY_MAP  ( ((UWord)1) << N_PRIMARY_BITS)
+
+/* Do not change this. */
+#define MAX_PRIMARY_ADDRESS (Addr)((((Addr)65536) * N_PRIMARY_MAP)-1)
+
+/*------------------------------------------------------------*/
+/*--- execution tracing                                    ---*/
+/*------------------------------------------------------------*/
+
 static void trace_wrtmp_load(Addr addr, SizeT size)
 {
    // VG_(printf)("trace_wrtmp_load addr=%08llx size=%llu\n", addr, size);
@@ -392,6 +439,11 @@ void kc_post_mem_write(CorePart part, ThreadId tid, Addr a, SizeT len)
    // VG_(dmsg)("kc_post_mem_write\n");
 }
 
+static void init_shadow_memory ( void )
+{
+
+}
+
 static void kc_pre_clo_init(void)
 {
    VG_(details_name)            ("Krabcake");
@@ -443,10 +495,13 @@ track_copy_mem_remap
       VG_(track_copy_reg_to_mem)  ( mc_copy_reg_to_mem );
    }
 
+
+*/
    init_shadow_memory();
 
-   MC_(do_instrumentation_startup_checks)();
-*/
+   // FIXME: if we ever add the helperc_value_checkN_fail_xxx stuff from
+   // memcheck., we should add the corresponding checking here.
+   /* MC_(do_instrumentation_startup_checks)(); */
 }
 
 VG_DETERMINE_INTERFACE_VERSION(kc_pre_clo_init)
