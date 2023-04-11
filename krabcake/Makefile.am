@@ -35,7 +35,7 @@ if VGCONF_HAVE_PLATFORM_SEC
 noinst_PROGRAMS += krabcake-@VGCONF_ARCH_SEC@-@VGCONF_OS@
 endif
 
-KRABCAKE_SOURCES_COMMON = kc_main.c kc_translate.c
+KRABCAKE_SOURCES_COMMON = kc_main.c kc_translate.c kc_errors.c
 
 # RUST_EXTRA_LD_FLAGS = -ldl -lrt -lpthread -lgcc_s -lc -lm -lrt -lutil
 # RUST_EXTRA_LD_FLAGS = -ldl -lrt -lpthread -lc -lm -lrt -lutil
