@@ -115,7 +115,7 @@ static void kc_post_clo_init(void)
 
 static void trace_cas(Addr addr)
 {
-   VG_(printf)("trace_cas addr=%08llx\n", addr);
+   // VG_(printf)("trace_cas addr=%08llx\n", addr);
 }
 
 /* FIXME: leaving out tracing of the stored data here for now. */
@@ -126,7 +126,7 @@ static void trace_storeg(ULong guard, Addr addr, SizeT size)
 
 static void trace_loadg(ULong guard, Addr addr, SizeT size, SizeT widened_size)
 {
-   VG_(printf)("trace_loadg guard=%lld addr=%08llx size=%llu\n", guard, addr, size);
+   // VG_(printf)("trace_loadg guard=%lld addr=%08llx size=%llu\n", guard, addr, size);
 }
 
 static void trace_wrtmp_load(Addr addr, SizeT size)
