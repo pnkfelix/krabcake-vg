@@ -112,6 +112,29 @@ fn rust_eh_personality() {
 // "if you cannot beat 'em, join 'em."
 mod libc_stuff;
 
+#[derive(Copy, Clone)]
+struct Tag(u64);
+
+impl Tag {
+    fn next(self) -> Tag {
+        Tag(self.0 + 1)
+    }
+}
+
+static mut COUNTER: Tag = Tag(0);
+
+enum Item {
+    Unique(Tag),
+}
+
+// FIXME: Need to more clearly distinguish between addresses and
+// shadowing of values. I.e. the tag here needs to be attached to the
+// location where an address itself is being stored, and needs to flow
+// along with the address as it is copied from place to place.
+static mut TRACKED: Vec<(usize, Tag)> = Vec::new();
+
+static mut STACKS: Vec<(usize, Vec<Item>)> = Vec::new();
+
 #[no_mangle]
 pub extern "C" fn rs_client_request_borrow_mut(
     thread_id: c_uint,
@@ -120,13 +143,15 @@ pub extern "C" fn rs_client_request_borrow_mut(
 ) -> bool {
     unsafe {
         vgPlain_dmsg(
-        "kc_handle_client_request, handle BORROW_MUT %llx (<- return value) %llx %llx %llx %llx\n\0".as_ptr() as *const c_char,
-        *arg.offset(1),
-        *arg.offset(2),
-        *arg.offset(3),
-        *arg.offset(4),
-        *arg.offset(5),
-    );
+            "kc_handle_client_request, handle BORROW_MUT %llx (<- return value) %llx %llx %llx %llx\n\0".as_ptr() as *const c_char,
+            *arg.offset(1),
+            *arg.offset(2),
+            *arg.offset(3),
+            *arg.offset(4),
+            *arg.offset(5),
+	);
+        COUNTER = COUNTER.next();
+        TRACKED.push((*arg.offset(1), COUNTER));
         *ret = *arg.offset(1);
     }
     true
