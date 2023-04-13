@@ -12,10 +12,7 @@ use core::ffi::{c_char, c_int, c_size_t, c_void, CStr};
 
 #[no_mangle]
 pub unsafe extern "C" fn printf(s: *const c_char) -> usize {
-    extern "C" {
-        fn vgPlain_printf(s: *const c_char, ...) -> usize;
-    }
-    unsafe { vgPlain_printf(s) }
+    unsafe { super::vgPlain_printf(s) as usize }
 }
 
 #[no_mangle]
