@@ -514,6 +514,7 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
          if (st->Ist.WrTmp.data->tag == Iex_Load) {
             di = kc_instrument_load(di, sbIn, sbOut, st);
          } else {
+            // FIXME we almost certainly need to add some tracking here
             addStmtToIRSB( sbOut, st );
          }
          break;
