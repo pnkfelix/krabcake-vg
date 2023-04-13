@@ -624,31 +624,31 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
       break;
    }
    case VG_USERREQ__BORROW_SHR: {
-      VG_(dmsg)("kc_handle_client_request, handle BORROW_SHR");
+      handled = rs_client_request_borrow_shr(tid, arg, ret);
       break;
    }
    case VG_USERREQ__AS_RAW: {
-      VG_(dmsg)("kc_handle_client_request, handle AS_RAW");
+      handled = rs_client_request_as_raw(tid, arg, ret);
       break;
    }
    case VG_USERREQ__AS_BORROW_MUT: {
-      VG_(dmsg)("kc_handle_client_request, handle AS_BORROW_MUT");
+      handled = rs_client_request_as_borrow_mut(tid, arg, ret);
       break;
    }
    case VG_USERREQ__AS_BORROW_SHR: {
-      VG_(dmsg)("kc_handle_client_request, handle AS_BORROW_SHR");
+      handled = rs_client_request_as_borrow_shr(tid, arg, ret);
       break;
    }
    case VG_USERREQ__RETAG_FN_PROLOGUE: {
-      VG_(dmsg)("kc_handle_client_request, handle RETAG_FN_PROLOGUE");
+      handled = rs_client_request_retag_fn_prologue(tid, arg, ret);
       break;
    }
    case VG_USERREQ__RETAG_ASSIGN: {
-      VG_(dmsg)("kc_handle_client_request, handle RETAG_ASSIGN");
+      handled = rs_client_request_retag_assign(tid, arg, ret);
       break;
    }
    case VG_USERREQ__RETAG_RAW: {
-      VG_(dmsg)("kc_handle_client_request, handle RETAG_RAW");
+      handled = rs_client_request_retag_raw(tid, arg, ret);
       break;
    }
    case VG_USERREQ__INTRINSICS_ASSUME: {
