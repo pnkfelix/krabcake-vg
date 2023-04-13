@@ -131,3 +131,93 @@ pub extern "C" fn rs_client_request_borrow_mut(
     }
     true
 }
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_borrow_shr(
+    thread_id: c_uint,
+    arg: *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        vgPlain_dmsg("kc_handle_client_request, handle BORROW_SHR\n\0".as_ptr() as *const c_char);
+    }
+    false
+}
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_as_raw(
+    thread_id: c_uint,
+    arg: *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        vgPlain_dmsg("kc_handle_client_request, handle AS_RAW\n\0".as_ptr() as *const c_char);
+    }
+    false
+}
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_as_borrow_mut(
+    thread_id: c_uint,
+    arg: *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        vgPlain_dmsg(
+            "kc_handle_client_request, handle AS_BORROW_MUT\n\0".as_ptr() as *const c_char,
+        );
+    }
+    false
+}
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_as_borrow_shr(
+    thread_id: c_uint,
+    arg: *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        vgPlain_dmsg(
+            "kc_handle_client_request, handle AS_BORROW_SHR\n\0".as_ptr() as *const c_char,
+        );
+    }
+    false
+}
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_retag_fn_prologue(
+    thread_id: c_uint,
+    arg: *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        vgPlain_dmsg(
+            "kc_handle_client_request, handle RETAG_FN_PROLOGUE\n\0".as_ptr() as *const c_char,
+        );
+    }
+    false
+}
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_retag_assign(
+    thread_id: c_uint,
+    arg: *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        vgPlain_dmsg("kc_handle_client_request, handle RETAG_ASSIGN\n\0".as_ptr() as *const c_char);
+    }
+    false
+}
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_retag_raw(
+    thread_id: c_uint,
+    arg: *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        vgPlain_dmsg("kc_handle_client_request, handle RETAG_RAW\n\0".as_ptr() as *const c_char);
+    }
+    false
+}
