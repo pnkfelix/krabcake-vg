@@ -121,7 +121,7 @@ static void trace_cas(Addr addr)
 /* FIXME: leaving out tracing of the stored data here for now. */
 static void trace_storeg(ULong guard, Addr addr, SizeT size)
 {
-   VG_(printf)("trace_storeg guard=%lld addr=%08llx size=%llu\n", guard, addr, size);
+   VG_(printf)("trace_storeg guard=%llu addr=%08lx size=%lu\n", guard, addr, size);
 }
 
 static void trace_loadg(ULong guard, Addr addr, SizeT size, SizeT widened_size)
@@ -141,17 +141,17 @@ static void trace_store(Addr addr, ULong data, SizeT size)
 
 static void trace_store128(Addr addr, ULong data1, ULong data2, SizeT size)
 {
-   VG_(printf)("trace_store128 addr=%08lx data=[%08llx, %08llx] size=%llu\n", addr, data1, data2, size);
+   VG_(printf)("trace_store128 addr=%08lx data=[%08llx, %08llx] size=%lu\n", addr, data1, data2, size);
 }
 
 static void trace_store256(Addr addr, ULong data1, ULong data2, ULong data3, ULong data4, SizeT size)
 {
-   VG_(printf)("trace_store128 addr=%08lx data=[%08llx, %08llx, %08llx, %08llx] size=%llu\n", addr, data1, data2, data3, data4, size);
+   VG_(printf)("trace_store128 addr=%08lx data=[%08llx, %08llx, %08llx, %08llx] size=%lu\n", addr, data1, data2, data3, data4, size);
 }
 
 static void trace_llsc(Addr addr)
 {
-   VG_(printf)("trace_llsc addr=%08llx, addr\n");
+   VG_(printf)("trace_llsc addr=%08lx\n", addr);
 }
 
 typedef enum { Orig=1, Tag=2, Stk=3, Vsh=4 } TempKind;
