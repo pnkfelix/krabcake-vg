@@ -47,14 +47,30 @@ unsafe impl GlobalAlloc for ValgrindAllocator {
     }
 }
 
+extern "C" {
+    fn vgPlain_sprintf(buf: *mut c_char, format: *const c_char, ...) -> u32;
+    fn vgPlain_snprintf(buf: *mut c_char, size: i32, format: *const c_char, ...) -> u32;
+    fn vgPlain_printf(format: *const c_char, ...) -> u32;
+}
+
 #[no_mangle]
 pub extern "C" fn hello_world(
+    _printn: extern "C" fn(*const c_char, n: usize) -> usize,
+    _printi: extern "C" fn(i: i32) -> usize,
+    _printu: extern "C" fn(u: u32) -> usize,
+) {
+    let msg: &[u8] = b"Hello world (from `rs_hello/src/lib.rs`)! \0";
+    unsafe { vgPlain_printf(msg.as_ptr() as *const c_char, msg.len()) };
+}
+
+#[no_mangle]
+pub extern "C" fn hello_world_old(
     printn: extern "C" fn(*const c_char, n: usize) -> usize,
     _printi: extern "C" fn(i: i32) -> usize,
     printu: extern "C" fn(u: u32) -> usize,
 ) {
     let msg: &[u8] = b"Hello world (from `rs_hello/src/lib.rs`)! ";
-    let printed = printn(msg.as_ptr() as *const c_char, msg.len());
+    let printed = unsafe { vgPlain_printf(msg.as_ptr() as *const c_char, msg.len()) };
     let msg = b"printed: ";
     printn(msg.as_ptr() as *const c_char, msg.len());
     printu(printed as u32);
