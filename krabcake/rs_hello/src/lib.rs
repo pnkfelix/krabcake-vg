@@ -3,7 +3,8 @@
 #![no_std]
 #![allow(unused_imports)]
 
-use core::ffi::{c_char, c_int, c_size_t, c_uint, c_void, CStr};
+use core::ffi::{c_char, c_int, c_longlong, c_size_t, c_uchar, c_uint};
+use core::ffi::{c_ulong, c_ulonglong, c_void, CStr};
 use core::panic::PanicInfo;
 use core::ptr;
 
@@ -245,4 +246,53 @@ pub extern "C" fn rs_client_request_retag_raw(
         vgPlain_dmsg("kc_handle_client_request, handle RETAG_RAW\n\0".as_ptr() as *const c_char);
     }
     false
+}
+
+#[allow(non_camel_case_types)]
+type vg_bool = c_uchar;
+#[allow(non_camel_case_types)]
+type vg_addr = c_ulong;
+#[allow(non_camel_case_types)]
+type vg_ulong = c_ulonglong;
+#[allow(non_camel_case_types)]
+type vg_long = c_longlong;
+#[allow(non_camel_case_types)]
+type vg_size_t = c_size_t;
+
+#[no_mangle]
+pub extern "C" fn rs_trace_cas(addr: vg_addr) {}
+#[no_mangle]
+pub extern "C" fn rs_trace_storeg(guard: vg_long, addr: vg_addr, size: vg_size_t) {}
+#[no_mangle]
+pub extern "C" fn rs_trace_loadg(
+    guard: u64,
+    addr: vg_addr,
+    size: vg_size_t,
+    widened_size: vg_size_t,
+) {
+}
+#[no_mangle]
+pub extern "C" fn rs_trace_wrtmp_load(addr: vg_addr, size: vg_size_t) {}
+
+#[no_mangle]
+pub extern "C" fn rs_trace_store(addr: vg_addr, data: vg_ulong, size: vg_size_t) {}
+
+#[no_mangle]
+pub extern "C" fn rs_trace_store128(
+    addr: vg_addr,
+    data1: vg_ulong,
+    data2: vg_ulong,
+    size: vg_size_t,
+) {
+}
+
+#[no_mangle]
+pub extern "C" fn rs_trace_store256(
+    addr: vg_addr,
+    data1: vg_ulong,
+    data2: vg_ulong,
+    data3: vg_ulong,
+    data4: vg_ulong,
+    size: vg_size_t,
+) {
 }
