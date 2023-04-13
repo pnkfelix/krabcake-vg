@@ -599,6 +599,16 @@ static void kc_print_debug_usage(void)
    );
 }
 
+extern Bool rs_client_request_borrow_mut ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_borrow_shr ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_as_raw ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_as_borrow_mut ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_as_borrow_shr ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_retag_fn_prologue ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_retag_assign ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_retag_raw ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_intrinsics_assume ( ThreadId tid, UWord* arg, UWord* ret );
+
 static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 {
    Bool  handled = False;
@@ -610,10 +620,7 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 
    switch(arg[0]) {
    case VG_USERREQ__BORROW_MUT: {
-      VG_(dmsg)("kc_handle_client_request, handle BORROW_MUT %llx (<- return value) %llx %llx %llx %llx\n",
-                (ULong)arg[1], (ULong)arg[2], (ULong)arg[3], (ULong)arg[4], (ULong)arg[5]);
-      *ret = arg[1];
-      handled = True;
+      handled = rs_client_request_borrow_mut(tid, arg, ret);
       break;
    }
    case VG_USERREQ__BORROW_SHR: {

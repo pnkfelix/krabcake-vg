@@ -3,7 +3,7 @@
 #![no_std]
 #![allow(unused_imports)]
 
-use core::ffi::{c_char, c_int, c_size_t, c_void, CStr};
+use core::ffi::{c_char, c_int, c_size_t, c_uint, c_void, CStr};
 use core::panic::PanicInfo;
 use core::ptr;
 
@@ -51,6 +51,8 @@ extern "C" {
     fn vgPlain_sprintf(buf: *mut c_char, format: *const c_char, ...) -> u32;
     fn vgPlain_snprintf(buf: *mut c_char, size: i32, format: *const c_char, ...) -> u32;
     fn vgPlain_printf(format: *const c_char, ...) -> u32;
+
+    fn vgPlain_dmsg(format: *const c_char, ...) -> u32;
 }
 
 #[no_mangle]
@@ -109,3 +111,23 @@ fn rust_eh_personality() {
 // pnkfelix got tired of fighting with the linker
 // "if you cannot beat 'em, join 'em."
 mod libc_stuff;
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_borrow_mut(
+    thread_id: c_uint,
+    arg: *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        vgPlain_dmsg(
+        "kc_handle_client_request, handle BORROW_MUT %llx (<- return value) %llx %llx %llx %llx\n\0".as_ptr() as *const c_char,
+        *arg.offset(1),
+        *arg.offset(2),
+        *arg.offset(3),
+        *arg.offset(4),
+        *arg.offset(5),
+    );
+        *ret = *arg.offset(1);
+    }
+    true
+}
