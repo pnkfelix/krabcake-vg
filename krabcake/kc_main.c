@@ -113,14 +113,373 @@ static void kc_post_clo_init(void)
    hello_world(printn, printi, printu);
 }
 
+static void trace_cas(Addr addr)
+{
+   VG_(printf)("trace_cas addr=%08llx\n", addr);
+}
+
+/* FIXME: leaving out tracing of the stored data here for now. */
+static void trace_storeg(ULong guard, Addr addr, SizeT size)
+{
+   VG_(printf)("trace_storeg guard=%lld addr=%08llx size=%llu\n", guard, addr, size);
+}
+
+static void trace_loadg(ULong guard, Addr addr, SizeT size, SizeT widened_size)
+{
+   VG_(printf)("trace_loadg guard=%lld addr=%08llx size=%llu\n", guard, addr, size);
+}
+
 static void trace_wrtmp_load(Addr addr, SizeT size)
 {
    // VG_(printf)("trace_wrtmp_load addr=%08llx size=%llu\n", addr, size);
 }
 
-static void trace_llsc()
+static void trace_store(Addr addr, ULong data, SizeT size)
 {
-   VG_(printf)("trace_llsc\n");
+   // VG_(printf)("trace_store addr=%08lx data=%08llx size=%llu\n", addr, data, size);
+}
+
+static void trace_store128(Addr addr, ULong data1, ULong data2, SizeT size)
+{
+   VG_(printf)("trace_store128 addr=%08lx data=[%08llx, %08llx] size=%llu\n", addr, data1, data2, size);
+}
+
+static void trace_store256(Addr addr, ULong data1, ULong data2, ULong data3, ULong data4, SizeT size)
+{
+   VG_(printf)("trace_store128 addr=%08lx data=[%08llx, %08llx, %08llx, %08llx] size=%llu\n", addr, data1, data2, data3, data4, size);
+}
+
+static void trace_llsc(Addr addr)
+{
+   VG_(printf)("trace_llsc addr=%08llx, addr\n");
+}
+
+typedef enum { Orig=1, Tag=2, Stk=3, Vsh=4 } TempKind;
+
+/* Create a new IRTemp of type 'ty' and kind 'kind'.
+   See analogous function in memcheck for ideas of where this might go.
+*/
+static IRTemp newTemp ( IRSB *sbOut, IRType ty, TempKind kind )
+{
+   IRTemp     tmp = newIRTemp(sbOut->tyenv, ty);
+   return tmp;
+}
+
+/* assign value to tmp */
+static inline 
+void assign ( HChar cat, IRSB *sbOut, IRTemp tmp, IRExpr* expr ) {
+   addStmtToIRSB(sbOut, IRStmt_WrTmp(tmp,expr));
+}
+
+#define mkexpr(_tmp)             IRExpr_RdTmp((_tmp))
+
+typedef  IRExpr  IRAtom;
+
+/* Bind the given expression to a new temporary, and return the
+   temporary.  This effectively converts an arbitrary expression into
+   an atom.
+
+   'ty' is the type of 'e' and hence the type that the new temporary
+   needs to be.  But passing it in is redundant, since we can deduce
+   the type merely by inspecting 'e'.  So at least use that fact to
+   assert that the two types agree. */
+static IRAtom* assignNew ( HChar cat, IRSB *sbOut, IRType ty, IRExpr* e )
+{
+   TempKind k;
+   IRTemp   t;
+   IRType   tyE = typeOfIRExpr(sbOut->tyenv, e);
+
+   tl_assert(tyE == ty); /* so 'ty' is redundant (!) */
+   switch (cat) {
+      case 'T': k = Tag;  break;
+      case 'S': k = Stk;  break;
+      case 'V': k = Vsh;  break;
+      case 'C': k = Orig; break; 
+                /* happens when we are making up new "orig"
+                   expressions, for IRCAS handling */
+      default: tl_assert(0);
+   }
+   t = newTemp(sbOut, ty, k);
+   assign(cat, sbOut, t, e);
+   return mkexpr(t);
+}
+
+static IRDirty* kc_instrument_llsc(IRDirty* di,
+                                   IRSB* sbIn,
+                                   IRSB* sbOut,
+                                   IRStmt *st)
+{
+   tl_assert(st->tag == Ist_LLSC);
+   IRType dataTy;
+   IRTypeEnv* tyenv = sbIn->tyenv;
+   if (st->Ist.LLSC.storedata == NULL) {
+      /* LL */
+      dataTy = typeOfIRTemp(tyenv, st->Ist.LLSC.result);
+      /* FIXME */
+   } else {
+      /* SC */
+      dataTy = typeOfIRExpr(tyenv, st->Ist.LLSC.storedata);
+      /* FIXME */
+   }
+   IRExpr* llsc_addr = st->Ist.LLSC.addr;
+   di = unsafeIRDirty_0_N(
+      0,
+      "trace_llsc",
+      VG_(fnptr_to_fnentry)( &trace_llsc ),
+      mkIRExprVec_1(llsc_addr)
+      );
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   addStmtToIRSB( sbOut, st );
+   return di;
+}
+
+static IRDirty* kc_instrument_cas(IRDirty* di,
+                                  IRSB* sbIn,
+                                  IRSB* sbOut,
+                                  IRStmt *st)
+{
+   tl_assert(st->tag == Ist_CAS);
+   Int    dataSize;
+   IRType dataTy;
+   IRCAS* cas = st->Ist.CAS.details;
+   tl_assert(cas->addr != NULL);
+   tl_assert(cas->dataLo != NULL);
+   IRExpr* cas_addr = cas->addr;
+   di = unsafeIRDirty_0_N(
+      0,
+      "trace_cas",
+      VG_(fnptr_to_fnentry)( &trace_cas ),
+      mkIRExprVec_1(cas_addr)
+      );
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   addStmtToIRSB( sbOut, st );
+   return di;
+}
+
+static IRDirty* kc_instrument_storeg(IRDirty* di,
+                                     IRSB* sbIn,
+                                     IRSB* sbOut,
+                                     IRStmt *st)
+{
+   // `if (<guard>) ST<end>(<addr>) = <data>` guarded store; all fields
+   // unconditionally evaluated.
+
+   tl_assert(st->tag == Ist_StoreG);
+   IRTypeEnv* tyenv = sbOut->tyenv;
+   IRStoreG* sg       = st->Ist.StoreG.details;
+
+   /* FIXME */
+
+   IRExpr *store_guard = sg->guard;
+   IRExpr *store_addr  = sg->addr;
+   IRExpr *store_data  = sg->data;
+
+   /* FIXME: This unconditionally calls the tracing for both true and false
+      guards, relying on the callee to not inspect the memory if the guard is
+      false.  It would be better to not invoke the tracing routine at all if the
+      guard is false. */
+   store_guard = IRExpr_Unop(Iop_1Uto64, store_guard);
+   store_guard = assignNew('V', sbOut, Ity_I64, store_guard);
+   IRType    store_type = typeOfIRExpr(tyenv, store_data);
+   Int       store_size = sizeofIRType(store_type);
+
+   tl_assert(0); // unimplemented
+   di = unsafeIRDirty_0_N(
+      0,
+      "trace_storeg",
+      VG_(fnptr_to_fnentry)( &trace_storeg ),
+      mkIRExprVec_3(store_guard, store_addr, mkIRExpr_HWord(store_size))
+      );
+   addStmtToIRSB( sbOut, st );
+   return di;
+}
+
+static IRDirty* kc_instrument_loadg(IRDirty* di,
+                                    IRSB* sbIn,
+                                    IRSB* sbOut,
+                                    IRStmt *st)
+{
+   tl_assert(st->tag == Ist_LoadG);
+   IRTypeEnv* tyenv = sbOut->tyenv;
+   IRLoadG* lg       = st->Ist.LoadG.details;
+   IRType   type     = Ity_INVALID; /* loaded type */
+   IRType   typeWide = Ity_INVALID; /* after implicit widening */
+   typeOfIRLoadGOp(lg->cvt, &typeWide, &type);
+   Int      load_size = sizeofIRType(type);
+   Int      load_widened_size = sizeofIRType(typeWide);
+
+   IRExpr *load_guard = lg->guard;
+   IRExpr *load_addr  = lg->addr;
+
+#if 0
+   VG_(printf)("load_guard pre ");
+   ppIRExpr(load_guard);
+   VG_(printf)(" : ");
+   ppIRType(typeOfIRExpr(tyenv, load_guard));
+   VG_(printf)("\n");
+#endif
+   
+   /* FIXME: This unconditionally calls the tracing for both true and false
+      guards, relying on the callee to not inspect the memory if the guard is
+      false.  It would be better to not invoke the tracing routine at all if the
+      guard is false. */
+   load_guard = IRExpr_Unop(Iop_1Uto64, load_guard);
+   load_guard = assignNew('V', sbOut, Ity_I64, load_guard);
+
+   di = unsafeIRDirty_0_N(
+      0,
+      "trace_loadg",
+      VG_(fnptr_to_fnentry)( &trace_loadg ),
+      mkIRExprVec_4(load_guard, load_addr, mkIRExpr_HWord(load_size), mkIRExpr_HWord(load_widened_size))
+      );
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   addStmtToIRSB( sbOut, st );
+   return di;
+}
+
+static IRDirty* kc_instrument_load (IRDirty* di,
+                                    IRSB* sbIn,
+                                    IRSB* sbOut,
+                                    IRStmt *st)
+{
+   // `t<tmp> = <data>` assigns value to an (SSA) temporary.
+   // This is handling specific case of `t<tmp> = LD<end>:<ty>(<addr>)`
+
+   /* FIXME: check if Loads can show up elsewhere in expressions */
+   tl_assert(st->tag == Ist_WrTmp && st->Ist.WrTmp.data->tag == Iex_Load);
+   IRTypeEnv* tyenv = sbIn->tyenv;
+   IRExpr* data = st->Ist.WrTmp.data;
+   IRType  type = typeOfIRExpr(tyenv, data);
+   IRExpr   *load_addr = data->Iex.Load.addr;
+   IRType    load_ty   = data->Iex.Load.ty;
+   IREndness load_end  = data->Iex.Load.end;
+   Int       load_size = sizeofIRType(load_ty);
+   /* FIXME */
+   di = unsafeIRDirty_0_N(
+      0,
+      "trace_wrtmp_load",
+      VG_(fnptr_to_fnentry)( &trace_wrtmp_load ),
+      mkIRExprVec_2(load_addr, mkIRExpr_HWord(load_size))
+      );
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   addStmtToIRSB( sbOut, st );
+   return di;
+}
+
+static IRDirty* kc_instrument_store (IRDirty* di,
+                                     IRSB* sbIn,
+                                     IRSB* sbOut,
+                                     IRStmt *st)
+{
+   // `ST<end>(<addr>) = <data>` writes value to memory, unconditionally.
+   IRTypeEnv* tyenv = sbIn->tyenv;
+
+   IREndness store_endian  = st->Ist.Store.end;
+   IRExpr*   store_addr = st->Ist.Store.addr;
+   IRExpr*   store_data = st->Ist.Store.data;
+   IRType    store_type = typeOfIRExpr(tyenv, store_data);
+   Int       store_size = sizeofIRType(store_type);
+
+   /* FIXME */
+   switch (store_type) {
+   case Ity_I1:
+   case Ity_I8:
+   case Ity_I16:
+   case Ity_I32:
+   case Ity_I64:
+   case Ity_F16:
+   case Ity_F32:
+   case Ity_F64:
+   case Ity_D32:
+   case Ity_D64: {
+      switch (store_type) {
+      case Ity_I1:
+         store_data = IRExpr_Unop(Iop_1Uto64, store_data);
+         break;
+      case Ity_I8:
+         store_data = IRExpr_Unop(Iop_8Uto64, store_data);
+         break;
+      case Ity_I16:
+         store_data = IRExpr_Unop(Iop_16Uto64, store_data);
+         break;
+      case Ity_I32:
+         store_data = IRExpr_Unop(Iop_32Uto64, store_data);
+         break;
+      case Ity_I64:
+         break;
+      default:
+         VG_(printf)("unhandled store_type: ");
+         ppIRType(store_type);
+         VG_(printf)(" (%d) \n", store_type);
+         tl_assert(0);
+      }
+      if (store_type != Ity_I64) {
+         store_data = assignNew('V', sbOut, Ity_I64, store_data);
+      }
+      di = unsafeIRDirty_0_N(
+         0,
+         "trace_store",
+         VG_(fnptr_to_fnentry)( &trace_store ),
+         mkIRExprVec_3(store_addr, store_data, mkIRExpr_HWord(store_size))
+         );
+      break;
+   }
+            
+   case Ity_I128:
+   case Ity_D128:
+   case Ity_F128:
+   case Ity_V128: {
+      // XXX FIXME worry about these cases after the demo
+      addStmtToIRSB( sbOut, st ); 
+      return di;
+
+      switch (store_type) {
+      case Ity_D128:
+         tl_assert(0); // XXX FIXME unimplemented
+         break;
+      case Ity_F128:
+         store_data = assignNew('V', sbOut, Ity_F128, store_data);
+         store_data = assignNew('V', sbOut, Ity_I128, IRExpr_Unop(Iop_ReinterpF128asI128, store_data));
+         break;
+      case Ity_V128:
+         store_data = assignNew('V', sbOut, Ity_V128, store_data);
+         store_data = assignNew('V', sbOut, Ity_I128, IRExpr_Unop(Iop_ReinterpV128asI128, store_data));
+      case Ity_I128:
+         break;
+      }
+      IRExpr* store_data1 = assignNew('V', sbOut, Ity_I64, IRExpr_Unop(Iop_128to64, store_data));
+      IRExpr* store_data2 = assignNew('V', sbOut, Ity_I64, IRExpr_Unop(Iop_128HIto64, store_data));
+      di = unsafeIRDirty_0_N(
+         0,
+         "trace_store128",
+         VG_(fnptr_to_fnentry)( &trace_store128 ),
+         mkIRExprVec_4(store_addr, store_data1, store_data2, mkIRExpr_HWord(store_size))
+         );
+      break;
+   }
+   case Ity_V256: {
+      // XXX FIXME worry about these cases after the demo
+      addStmtToIRSB( sbOut, st ); 
+      return di;
+
+      IRExpr* store_data1 = assignNew('V', sbOut, Ity_I64, IRExpr_Unop(Iop_V256to64_0, store_data));
+      IRExpr* store_data2 = assignNew('V', sbOut, Ity_I64, IRExpr_Unop(Iop_V256to64_1, store_data));
+      IRExpr* store_data3 = assignNew('V', sbOut, Ity_I64, IRExpr_Unop(Iop_V256to64_2, store_data));
+      IRExpr* store_data4 = assignNew('V', sbOut, Ity_I64, IRExpr_Unop(Iop_V256to64_3, store_data));
+      di = unsafeIRDirty_0_N(
+         0,
+         "trace_store256",
+         VG_(fnptr_to_fnentry)( &trace_store256 ),
+         mkIRExprVec_6(store_addr, store_data1, store_data2, store_data3, store_data4, mkIRExpr_HWord(store_size))
+         );
+      break;
+   }
+   default:
+      tl_assert(0); // unreachable
+   }
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   addStmtToIRSB( sbOut, st ); 
+   return di;
 }
 
 static
@@ -152,83 +511,38 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
 
          // `t<tmp> = <data>` assigns value to an (SSA) temporary.
       case Ist_WrTmp: {
-         IRExpr* data = st->Ist.WrTmp.data;
-         IRType  type = typeOfIRExpr(tyenv, data);
-         if (data->tag == Iex_Load) {
-            IRExpr   *load_addr = data->Iex.Load.addr;
-            IRType    load_ty   = data->Iex.Load.ty;
-            IREndness load_end  = data->Iex.Load.end;
-            Int       load_size = sizeofIRType(load_ty);
-            /* FIXME */
-            di = unsafeIRDirty_0_N(
-               0,
-               "trace_wrtmp_load",
-               VG_(fnptr_to_fnentry)( &trace_wrtmp_load ),
-               mkIRExprVec_2(load_addr, mkIRExpr_HWord(load_size))
-               );
-            addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+         if (st->Ist.WrTmp.data->tag == Iex_Load) {
+            di = kc_instrument_load(di, sbIn, sbOut, st);
+         } else {
+            addStmtToIRSB( sbOut, st );
          }
-         addStmtToIRSB( sbOut, st );
          break;
       }
          // `ST<end>(<addr>) = <data>` writes value to memory, unconditionally.
       case Ist_Store: {
-         IRExpr* data = st->Ist.Store.data;
-         IRType  type = typeOfIRExpr(tyenv, data);
-         /* FIXME */
-         addStmtToIRSB( sbOut, st );
+         di = kc_instrument_store( di, sbIn, sbOut, st );
          break;
       }
-         // `t<tmp> = if (<guard>) <cvt>(LD<env>(<addr>)) else <alt>` guarded load
+         // `t<tmp> = if (<guard>) <cvt>(LD<end>(<addr>)) else <alt>` guarded load
       case Ist_LoadG: {
-         IRLoadG* lg       = st->Ist.LoadG.details;
-         IRType   type     = Ity_INVALID; /* loaded type */
-         IRType   typeWide = Ity_INVALID; /* after implicit widening */
-         typeOfIRLoadGOp(lg->cvt, &typeWide, &type);
-         /* FIXME */
-         addStmtToIRSB( sbOut, st );
+         di = kc_instrument_loadg(di, sbIn, sbOut, st);
          break;
       }
          // `if (<guard>) ST<end>(<addr>) = <data>` guarded store; all fields
          // unconditionally evaluated.
       case Ist_StoreG: {
-         /* FIXME */
-         addStmtToIRSB( sbOut, st );
+         di = kc_instrument_storeg(di, sbIn, sbOut, st);
          break;
       }
          // `t<tmp> = CAS<end>(<addr> :: <expected> -> <new>)` atomic compare-and-swap
       case Ist_CAS: {
-         Int    dataSize;
-         IRType dataTy;
-         IRCAS* cas = st->Ist.CAS.details;
-         tl_assert(cas->addr != NULL);
-         tl_assert(cas->dataLo != NULL);
-         dataTy   = typeOfIRExpr(tyenv, cas->dataLo);
-         /* FIXME */
-         addStmtToIRSB( sbOut, st );
+         di = kc_instrument_cas(di, sbIn, sbOut, st);
          break;
       }
          // `result = LD<end>-Linked(<addr>)` if STOREDATA is null
          // `result = ( ST<end>-Cond(<addr>)` if STOREDATA nonnull
       case Ist_LLSC: {
-         IRType dataTy;
-         if (st->Ist.LLSC.storedata == NULL) {
-            /* LL */
-            dataTy = typeOfIRTemp(tyenv, st->Ist.LLSC.result);
-            /* FIXME */
-         } else {
-            /* SC */
-            dataTy = typeOfIRExpr(tyenv, st->Ist.LLSC.storedata);
-            /* FIXME */
-         }
-         di = unsafeIRDirty_0_N(
-            0,
-            "trace_llsc",
-            VG_(fnptr_to_fnentry)( &trace_llsc ),
-            mkIRExprVec_0()
-            );
-         addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
-         addStmtToIRSB( sbOut, st );
+         di = kc_instrument_llsc(di, sbIn, sbOut, st);
          break;
       }
 
