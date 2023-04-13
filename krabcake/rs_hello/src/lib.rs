@@ -11,7 +11,7 @@ extern crate alloc;
 use core::alloc::{GlobalAlloc, Layout};
 
 // Can now import and use anything in alloc
-// use alloc::vec::Vec;
+use alloc::vec::Vec;
 
 extern "C" {
     // From krabcake-vg/include/pub_tool_mallocfree.h
@@ -59,8 +59,22 @@ pub extern "C" fn hello_world(
     _printi: extern "C" fn(i: i32) -> usize,
     _printu: extern "C" fn(u: u32) -> usize,
 ) {
-    let msg: &[u8] = b"Hello world (from `rs_hello/src/lib.rs`)! \0";
+    let msg: &[u8] = b"Hello world (from `rs_hello/src/lib.rs`)!\n\0";
     unsafe { vgPlain_printf(msg.as_ptr() as *const c_char, msg.len()) };
+
+    let mut v = Vec::new();
+    v.push(0);
+    v.push(1);
+    v.push(2);
+    unsafe {
+        vgPlain_printf("v.len: %u\n\0".as_ptr() as *const c_char, v.len() as c_int);
+        let end = v.pop().unwrap();
+        vgPlain_printf(
+            "end: %u, v.len: %u\n\0".as_ptr() as *const c_char,
+            end as c_int,
+            v.len() as c_int,
+        );
+    };
 }
 
 #[no_mangle]
