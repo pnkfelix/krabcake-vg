@@ -14,9 +14,13 @@ RSHELLO_TARGET = $(RSHELLO_DIR)/target/release
 #	cd $(srcdir)/$(RSHELLO_DIR) && $(CARGO) build --release
 
 $(RSHELLO_TARGET)/librs_hello.amd64.a: $(RSHELLO_DIR)/src/lib.rs $(RSHELLO_DIR)/src/*.rs
+	mkdir -p $(RSHELLO_TARGET)
+	rustup target add x86_64-unknown-linux-gnu
 	rustc --edition=2021 --target=x86_64-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
 
 $(RSHELLO_TARGET)/librs_hello.x86.a: $(RSHELLO_DIR)/src/lib.rs $(RSHELLO_DIR)/src/*.rs
+	mkdir -p $(RSHELLO_TARGET)
+	rustup target add i586-unknown-linux-gnu
 	rustc --edition=2021 --target=i586-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
 
 clean-local:
