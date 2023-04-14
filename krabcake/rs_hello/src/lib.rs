@@ -132,9 +132,23 @@ enum Item {
 // shadowing of values. I.e. the tag here needs to be attached to the
 // location where an address itself is being stored, and needs to flow
 // along with the address as it is copied from place to place.
-static mut TRACKED: Vec<(usize, Tag)> = Vec::new();
+static mut TRACKED: Vec<(vg_addr, Tag)> = Vec::new();
 
-static mut STACKS: Vec<(usize, Vec<Item>)> = Vec::new();
+static mut STACKS: Vec<(vg_addr, Vec<Item>)> = Vec::new();
+
+fn if_has_stack_then<T>(
+    addr: vg_addr,
+    process_stack: impl FnOnce(&mut Vec<Item>) -> T,
+) -> Option<T> {
+    unsafe {
+        for entry in &mut STACKS {
+            if entry.0 == addr {
+                return Some(process_stack(&mut entry.1));
+            }
+        }
+    }
+    None
+}
 
 #[no_mangle]
 pub extern "C" fn rs_client_request_borrow_mut(
@@ -152,7 +166,16 @@ pub extern "C" fn rs_client_request_borrow_mut(
             *arg.offset(5),
 	);
         COUNTER = COUNTER.next();
-        TRACKED.push((*arg.offset(1), COUNTER));
+        let addr = *arg.offset(1) as vg_addr;
+        TRACKED.push((addr, COUNTER));
+        let lookup = if_has_stack_then(addr, |entries| {
+            entries.push(Item::Unique(Tag(addr as u64)));
+        });
+        if lookup.is_none() {
+            let mut v = Vec::new();
+            v.push(Item::Unique(Tag(addr as u64)));
+            STACKS.push((addr, v));
+        }
         *ret = *arg.offset(1);
     }
     true
@@ -260,22 +283,46 @@ type vg_long = c_longlong;
 type vg_size_t = c_size_t;
 
 #[no_mangle]
-pub extern "C" fn rs_trace_cas(addr: vg_addr) {}
+pub extern "C" fn rs_trace_cas(addr: vg_addr) {
+    unsafe {
+        if false {
+            let mut buf = alloc::string::String::new();
+            buf += "rs_trace_cas addr=%08llx";
+            vgPlain_printf((buf + "\n\0").as_ptr() as *const c_char, addr);
+        }
+    }
+}
 #[no_mangle]
 pub extern "C" fn rs_trace_storeg(guard: vg_long, addr: vg_addr, size: vg_size_t) {}
 #[no_mangle]
 pub extern "C" fn rs_trace_loadg(
-    guard: u64,
+    guard: vg_long,
     addr: vg_addr,
     size: vg_size_t,
     widened_size: vg_size_t,
 ) {
 }
 #[no_mangle]
-pub extern "C" fn rs_trace_wrtmp_load(addr: vg_addr, size: vg_size_t) {}
+pub extern "C" fn rs_trace_wrtmp_load(addr: vg_addr, size: vg_size_t) {
+    if_has_stack_then(addr, |stack| unsafe {
+        vgPlain_printf(
+            b"rs_trace_wrtmp_load addr %08llx has stack len: %d\n\0".as_ptr() as *const c_char,
+            addr,
+            stack.len(),
+        );
+    });
+}
 
 #[no_mangle]
-pub extern "C" fn rs_trace_store(addr: vg_addr, data: vg_ulong, size: vg_size_t) {}
+pub extern "C" fn rs_trace_store(addr: vg_addr, data: vg_ulong, size: vg_size_t) {
+    if_has_stack_then(addr, |stack| unsafe {
+        vgPlain_printf(
+            b"rs_trace_store addr %08llx has stack len: %d\n\0".as_ptr() as *const c_char,
+            addr,
+            stack.len(),
+        );
+    });
+}
 
 #[no_mangle]
 pub extern "C" fn rs_trace_store128(
@@ -296,3 +343,6 @@ pub extern "C" fn rs_trace_store256(
     size: vg_size_t,
 ) {
 }
+
+#[no_mangle]
+pub extern "C" fn rs_trace_llsc(addr: vg_addr) {}
