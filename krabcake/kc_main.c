@@ -113,6 +113,15 @@ static void kc_post_clo_init(void)
    hello_world(printn, printi, printu);
 }
 
+extern void rs_trace_cas ( Addr addr );
+extern void rs_trace_storeg ( Long guard, Addr addr, SizeT size );
+extern void rs_trace_loadg ( Long guard, Addr addr, SizeT size, SizeT widened_size );
+extern void rs_trace_wrtmp_load ( Addr addr, SizeT size );
+extern void rs_trace_store ( Addr addr, ULong data, SizeT size );
+extern void rs_trace_store128 ( Addr addr, ULong data1, ULong data2, SizeT size );
+extern void rs_trace_store256 ( Addr addr, ULong data1, ULong data2, ULong data3, ULong data4, SizeT size );
+extern void rs_trace_llsc ( Addr addr );
+
 static void trace_cas(Addr addr)
 {
    // VG_(printf)("trace_cas addr=%08llx\n", addr);
@@ -224,8 +233,8 @@ static IRDirty* kc_instrument_llsc(IRDirty* di,
    IRExpr* llsc_addr = st->Ist.LLSC.addr;
    di = unsafeIRDirty_0_N(
       0,
-      "trace_llsc",
-      VG_(fnptr_to_fnentry)( &trace_llsc ),
+      "rs_trace_llsc",
+      VG_(fnptr_to_fnentry)( &rs_trace_llsc ),
       mkIRExprVec_1(llsc_addr)
       );
    addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
@@ -247,8 +256,8 @@ static IRDirty* kc_instrument_cas(IRDirty* di,
    IRExpr* cas_addr = cas->addr;
    di = unsafeIRDirty_0_N(
       0,
-      "trace_cas",
-      VG_(fnptr_to_fnentry)( &trace_cas ),
+      "rs_trace_cas",
+      VG_(fnptr_to_fnentry)( &rs_trace_cas ),
       mkIRExprVec_1(cas_addr)
       );
    addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
@@ -286,8 +295,8 @@ static IRDirty* kc_instrument_storeg(IRDirty* di,
    tl_assert(0); // unimplemented
    di = unsafeIRDirty_0_N(
       0,
-      "trace_storeg",
-      VG_(fnptr_to_fnentry)( &trace_storeg ),
+      "rs_trace_storeg",
+      VG_(fnptr_to_fnentry)( &rs_trace_storeg ),
       mkIRExprVec_3(store_guard, store_addr, mkIRExpr_HWord(store_size))
       );
    addStmtToIRSB( sbOut, st );
@@ -328,8 +337,8 @@ static IRDirty* kc_instrument_loadg(IRDirty* di,
 
    di = unsafeIRDirty_0_N(
       0,
-      "trace_loadg",
-      VG_(fnptr_to_fnentry)( &trace_loadg ),
+      "rs_trace_loadg",
+      VG_(fnptr_to_fnentry)( &rs_trace_loadg ),
       mkIRExprVec_4(load_guard, load_addr, mkIRExpr_HWord(load_size), mkIRExpr_HWord(load_widened_size))
       );
    addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
@@ -357,8 +366,8 @@ static IRDirty* kc_instrument_load (IRDirty* di,
    /* FIXME */
    di = unsafeIRDirty_0_N(
       0,
-      "trace_wrtmp_load",
-      VG_(fnptr_to_fnentry)( &trace_wrtmp_load ),
+      "rs_trace_wrtmp_load",
+      VG_(fnptr_to_fnentry)( &rs_trace_wrtmp_load ),
       mkIRExprVec_2(load_addr, mkIRExpr_HWord(load_size))
       );
    addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
@@ -418,8 +427,8 @@ static IRDirty* kc_instrument_store (IRDirty* di,
       }
       di = unsafeIRDirty_0_N(
          0,
-         "trace_store",
-         VG_(fnptr_to_fnentry)( &trace_store ),
+         "rs_trace_store",
+         VG_(fnptr_to_fnentry)( &rs_trace_store ),
          mkIRExprVec_3(store_addr, store_data, mkIRExpr_HWord(store_size))
          );
       break;
@@ -451,8 +460,8 @@ static IRDirty* kc_instrument_store (IRDirty* di,
       IRExpr* store_data2 = assignNew('V', sbOut, Ity_I64, IRExpr_Unop(Iop_128HIto64, store_data));
       di = unsafeIRDirty_0_N(
          0,
-         "trace_store128",
-         VG_(fnptr_to_fnentry)( &trace_store128 ),
+         "rs_trace_store128",
+         VG_(fnptr_to_fnentry)( &rs_trace_store128 ),
          mkIRExprVec_4(store_addr, store_data1, store_data2, mkIRExpr_HWord(store_size))
          );
       break;
@@ -468,8 +477,8 @@ static IRDirty* kc_instrument_store (IRDirty* di,
       IRExpr* store_data4 = assignNew('V', sbOut, Ity_I64, IRExpr_Unop(Iop_V256to64_3, store_data));
       di = unsafeIRDirty_0_N(
          0,
-         "trace_store256",
-         VG_(fnptr_to_fnentry)( &trace_store256 ),
+         "rs_trace_store256",
+         VG_(fnptr_to_fnentry)( &rs_trace_store256 ),
          mkIRExprVec_6(store_addr, store_data1, store_data2, store_data3, store_data4, mkIRExpr_HWord(store_size))
          );
       break;
