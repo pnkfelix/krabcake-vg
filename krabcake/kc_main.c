@@ -416,7 +416,7 @@ static void  kc_instrument_llsc ( IRSB* sbIn,
 {
    tl_assert(st->tag == Ist_LLSC);
    IRType dataTy;
-   IRTypeEnv* tyenv = sbIn->tyenv;
+   IRTypeEnv* tyenv = sbOut->tyenv;
    if (st->Ist.LLSC.storedata == NULL) {
       /* LL */
       dataTy = typeOfIRTemp(tyenv, st->Ist.LLSC.result);
@@ -544,7 +544,7 @@ static void kc_instrument_load ( IRSB* sbIn,
 
    /* FIXME: check if Loads can show up elsewhere in expressions */
    tl_assert(st->tag == Ist_WrTmp && st->Ist.WrTmp.data->tag == Iex_Load);
-   IRTypeEnv* tyenv = sbIn->tyenv;
+   IRTypeEnv* tyenv = sbOut->tyenv;
    IRTemp  lhs_tmp = st->Ist.WrTmp.tmp;
    IRExpr* data = st->Ist.WrTmp.data;
    IRType  type = typeOfIRExpr(tyenv, data);
@@ -569,7 +569,7 @@ static void kc_instrument_store ( IRSB* sbIn,
 {
    IRDirty* di;
    // `ST<end>(<addr>) = <data>` writes value to memory, unconditionally.
-   IRTypeEnv* tyenv = sbIn->tyenv;
+   IRTypeEnv* tyenv = sbOut->tyenv;
 
    IREndness store_endian  = st->Ist.Store.end;
    IRExpr*   store_addr = st->Ist.Store.addr;
@@ -688,13 +688,13 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
 {
    IRDirty*   di;
    IRSB*      sbOut;
-   IRTypeEnv* tyenv = sbIn->tyenv;
 
    /* Set up SB. As this says, it copies everything except the statement list.
       That means it copies the type enviroment and the basic-block control-flow
       structure.
     */
    sbOut = deepCopyIRSBExceptStmts(sbIn);
+   IRTypeEnv* tyenv = sbOut->tyenv;
 
    Int      i;
    IRStmt** sts2;
