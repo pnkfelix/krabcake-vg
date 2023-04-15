@@ -113,9 +113,22 @@ static void kc_post_clo_init(void)
    hello_world(printn, printi, printu);
 }
 
+extern Long rs_shadow_rdtmp ( Long tmp );
+extern Long rs_shadow_qop ( Long op );
+extern Long rs_shadow_triop ( Long op );
+extern Long rs_shadow_binop ( Long op );
+extern Long rs_shadow_unop ( Long op );
+extern Long rs_shadow_load ( Addr addr, Long s1 );
+extern Long rs_shadow_const ( );
+extern Long rs_shadow_ite ( Long cond, Long s1, Long s2, Long s3 );
+extern Long rs_shadow_get ( Long offset, Long ty );
+extern Long rs_shadow_geti ( );
+extern Long rs_shadow_ccall ( );
+
 extern void rs_trace_cas ( Addr addr );
 extern void rs_trace_storeg ( Long guard, Addr addr, SizeT size );
 extern void rs_trace_loadg ( Long guard, Addr addr, SizeT size, SizeT widened_size );
+extern void rs_trace_wrtmp ( IRTemp lhs_tmp, ULong shadow_data );
 extern void rs_trace_wrtmp_load ( IRTemp lhs_tmp, Addr addr, SizeT size );
 extern void rs_trace_store ( Addr addr, ULong data, SizeT size );
 extern void rs_trace_store128 ( Addr addr, ULong data1, ULong data2, SizeT size );
@@ -266,6 +279,203 @@ typedef enum ExprContext {
 
    Superblock_Next,
 } ExprContext;
+
+IRTemp newTagTemp ( IRSB* sbOut ) {
+   return newIRTemp( sbOut->tyenv, Ity_I64 );
+}
+
+IRTemp newHWordTemp ( IRSB* sbOut ) {
+   return newIRTemp( sbOut->tyenv, Ity_I64 );
+}
+
+static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
+                                        IRExpr* e,
+                                        ExprContext ec)
+{
+   IRExpr* (*recur)(IRSB *sbOut, IRExpr* e, ExprContext exc);
+   recur = kc_construct_shadow_eval;
+
+   // VG_(printf)("kc_construct_shadow_eval "); ppIRExpr(e); VG_(printf)("\n");
+   
+   IRDirty* di;
+   IRTemp recvTmp = newTagTemp( sbOut );
+
+   IRExpr *shadow1, *shadow2, *shadow3, *shadow4;
+
+   switch (e->tag) {
+      /* should not be seen outside of Vex */ 
+   case Iex_Binder: tl_assert(0); break;
+      /* The value held by a temporary.
+         ppIRExpr output: t<tmp>, eg. t1 */
+   case Iex_RdTmp:
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_rdtmp",
+         VG_(fnptr_to_fnentry)( &rs_shadow_rdtmp ),
+         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.RdTmp.tmp))
+         );
+      break;
+      /* A quaternary operation.
+         ppIRExpr output: <op>(<arg1>, <arg2>, <arg3>, <arg4>),
+                      eg. MAddF64r32(t1, t2, t3, t4)
+      */
+   case Iex_Qop:
+      shadow1 = recur(sbOut, e->Iex.Qop.details->arg1, Expr_Qop_Arg1);
+      shadow2 = recur(sbOut, e->Iex.Qop.details->arg2, Expr_Qop_Arg2);
+      shadow3 = recur(sbOut, e->Iex.Qop.details->arg3, Expr_Qop_Arg3);
+      shadow4 = recur(sbOut, e->Iex.Qop.details->arg4, Expr_Qop_Arg4);
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_qop",
+         VG_(fnptr_to_fnentry)( &rs_shadow_qop ),
+         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.Qop.details->op))
+         );
+      break;
+      /* A ternary operation.
+         ppIRExpr output: <op>(<arg1>, <arg2>, <arg3>),
+                      eg. MulF64(1, 2.0, 3.0)
+      */
+   case Iex_Triop:
+      shadow1 = recur(sbOut, e->Iex.Triop.details->arg1, Expr_Triop_Arg1);
+      shadow2 = recur(sbOut, e->Iex.Triop.details->arg2, Expr_Triop_Arg2);
+      shadow3 = recur(sbOut, e->Iex.Triop.details->arg3, Expr_Triop_Arg3);
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_triop",
+         VG_(fnptr_to_fnentry)( &rs_shadow_triop ),
+         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.Triop.details->op))
+         );
+      break;
+      /* A binary operation.
+         ppIRExpr output: <op>(<arg1>, <arg2>), eg. Add32(t1,t2)
+      */
+   case Iex_Binop:
+      shadow1 = recur(sbOut, e->Iex.Binop.arg1, Expr_Binop_Arg1);
+      shadow2 = recur(sbOut, e->Iex.Binop.arg2, Expr_Binop_Arg2);
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_binop",
+         VG_(fnptr_to_fnentry)( &rs_shadow_binop ),
+         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.Binop.op))
+         );
+      break;
+      /* A unary operation.
+         ppIRExpr output: <op>(<arg>), eg. Neg8(t1)
+      */
+   case Iex_Unop:
+      shadow1 = recur(sbOut, e->Iex.Unop.arg, Expr_Unop_Arg);
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_unop",
+         VG_(fnptr_to_fnentry)( &rs_shadow_unop ),
+         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.Unop.op))
+         );
+      break;
+      /* A load from memory -- a normal load, not a load-linked.
+         ppIRExpr output: LD<end>:<ty>(<addr>), eg. LDle:I32(t1)
+      */
+   case Iex_Load:
+      shadow1 = recur(sbOut, e->Iex.Load.addr, Expr_Load_Addr);
+/*
+   IRExpr   *load_addr = data->Iex.Load.addr;
+   IRType    load_ty   = data->Iex.Load.ty;
+   IREndness load_end  = data->Iex.Load.end;
+   Int       load_size = sizeofIRType(load_ty);
+*/
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_load",
+         VG_(fnptr_to_fnentry)( &rs_shadow_load ),
+         mkIRExprVec_2(e->Iex.Load.addr, shadow1)
+         );
+      break;
+      /* A constant-valued expression.
+         ppIRExpr output: <con>, eg. 0x4:I32
+      */
+   case Iex_Const:
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_const",
+         VG_(fnptr_to_fnentry)( &rs_shadow_const ),
+         mkIRExprVec_0()
+         );
+      break;
+      /* A ternary if-then-else operator. Note both iftrue and iffalse are
+         evaluated in all cases.
+         ppIRExpr output: ITE(<cond>,<iftrue>,<iffalse>),
+                         eg. ITE(t6,t7,t8)
+      */
+   case Iex_ITE:
+      shadow1 = recur(sbOut, e->Iex.ITE.cond, Expr_ITE_Cond);
+      shadow2 = recur(sbOut, e->Iex.ITE.iftrue, Expr_ITE_IfTrue);
+      shadow3 = recur(sbOut, e->Iex.ITE.iffalse, Expr_ITE_IfFalse);
+      IRTemp extendTmp = newHWordTemp(sbOut);
+      IRExpr* cond = IRExpr_Unop(Iop_1Uto64, e->Iex.ITE.cond);
+      cond = assignNew('V', sbOut, Ity_I64, cond);
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_ite",
+         VG_(fnptr_to_fnentry)( &rs_shadow_ite ),
+         mkIRExprVec_4(cond, shadow1, shadow2, shadow3)
+         );
+      break;
+      /* Read a guest register, at a fixed offset in the guest state.
+         ppIRExpr output: GET:<ty>(<offset>), eg. GET:I32(0) */
+   case Iex_Get:
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_get",
+         VG_(fnptr_to_fnentry)( &rs_shadow_get ),
+         mkIRExprVec_2(mkIRExpr_HWord(e->Iex.Get.offset),
+                       mkIRExpr_HWord(e->Iex.Get.ty))
+         );
+      break;
+      /* Read a guest register at a non-fixed offset in the guest state; allows
+         circular indexing into parts of the guest state. 
+         ppIRExpr output: GETI<descr>[<ix>,<bias] eg. GETI(128:8xI8)[t1,0] */
+   case Iex_GetI:
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_geti",
+         VG_(fnptr_to_fnentry)( &rs_shadow_geti ),
+         mkIRExprVec_0()
+         );
+      break;
+      /* A call to a pure (no side-effects) helper C function.
+         ppIRExpr output: <cee>(<args>):<retty>
+                      eg. foo{0x80489304}(t1, t2):I32 */
+   case Iex_CCall:
+      di = unsafeIRDirty_1_N(
+         recvTmp,
+         0,
+         "rs_shadow_ccall",
+         VG_(fnptr_to_fnentry)( &rs_shadow_ccall ),
+         mkIRExprVec_0()
+         );
+      break;
+      /* Two special kinds of IRExpr, which can ONLY be used in
+         argument lists for dirty helper calls (IRDirty.args) and in NO
+         OTHER PLACES.  And then only in very limited ways.  */
+   case Iex_VECRET:
+   case Iex_GSPTR:
+      /* FIXME should I print something here to remind myself these cases are not handled? */
+      tl_assert(0); // unimplemented
+      break;
+   }
+
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   return IRExpr_RdTmp( recvTmp );
+}
 
 static void kc_instrument_expr_eval(IRSB* sbOut,
                                     IRExpr* data,
@@ -528,28 +738,22 @@ static void kc_instrument_loadg ( IRSB* sbOut,
    addStmtToIRSB( sbOut, st );
 }
 
-static void kc_instrument_load ( IRSB* sbOut,
-                                 IRStmt *st)
+static void kc_instrument_wrtmp ( IRSB* sbOut,
+                                  IRStmt *st,
+                                  IRExpr* shadow_data )
 {
    // `t<tmp> = <data>` assigns value to an (SSA) temporary.
-   // This is handling specific case of `t<tmp> = LD<end>:<ty>(<addr>)`
-
-   /* FIXME: check if Loads can show up elsewhere in expressions */
-   tl_assert(st->tag == Ist_WrTmp && st->Ist.WrTmp.data->tag == Iex_Load);
+   tl_assert(st->tag == Ist_WrTmp);
    IRTypeEnv* tyenv = sbOut->tyenv;
    IRTemp  lhs_tmp = st->Ist.WrTmp.tmp;
    IRExpr* data = st->Ist.WrTmp.data;
    IRType  type = typeOfIRExpr(tyenv, data);
-   IRExpr   *load_addr = data->Iex.Load.addr;
-   IRType    load_ty   = data->Iex.Load.ty;
-   IREndness load_end  = data->Iex.Load.end;
-   Int       load_size = sizeofIRType(load_ty);
    /* FIXME */
    IRDirty* di = unsafeIRDirty_0_N(
       0,
-      "rs_trace_wrtmp_load",
-      VG_(fnptr_to_fnentry)( &rs_trace_wrtmp_load ),
-      mkIRExprVec_3(mkIRExpr_HWord(lhs_tmp), load_addr, mkIRExpr_HWord(load_size))
+      "rs_trace_wrtmp",
+      VG_(fnptr_to_fnentry)( &rs_trace_wrtmp ),
+      mkIRExprVec_2(mkIRExpr_HWord(lhs_tmp), shadow_data )
       );
    addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
    addStmtToIRSB( sbOut, st );
@@ -698,12 +902,8 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
 
          // `t<tmp> = <data>` assigns value to an (SSA) temporary.
       case Ist_WrTmp: {
-         if (st->Ist.WrTmp.data->tag == Iex_Load) {
-            kc_instrument_load(sbOut, st);
-         } else {
-            // FIXME we almost certainly need to add some tracking here
-            addStmtToIRSB( sbOut, st );
-         }
+         IRExpr* shadow_data = kc_construct_shadow_eval(sbOut, st->Ist.WrTmp.data, Stmt_WrTmp_Data);
+         kc_instrument_wrtmp(sbOut, st, shadow_data);
          break;
       }
          // `ST<end>(<addr>) = <data>` writes value to memory, unconditionally.

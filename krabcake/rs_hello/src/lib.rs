@@ -136,6 +136,17 @@ static mut TRACKED: Vec<(vg_addr, Tag)> = Vec::new();
 
 static mut STACKS: Vec<(vg_addr, Vec<Item>)> = Vec::new();
 
+fn if_tracked_then<T>(addr: vg_addr, process_tag: impl FnOnce(Tag) -> T) -> Option<T> {
+    unsafe {
+        for entry in &TRACKED {
+            if entry.0 == addr {
+                return Some(process_tag(entry.1));
+            }
+        }
+    }
+    None
+}
+
 fn if_has_stack_then<T>(
     addr: vg_addr,
     process_stack: impl FnOnce(&mut Vec<Item>) -> T,
@@ -165,7 +176,8 @@ pub extern "C" fn rs_client_request_borrow_mut(
         );
         COUNTER = COUNTER.next();
         let addr = *arg.offset(1) as vg_addr;
-        TRACKED.push((addr, COUNTER));
+        let addr_recv = ret as vg_addr;
+        TRACKED.push((addr_recv, COUNTER));
         let lookup = if_has_stack_then(addr, |entries| {
             entries.push(Item::Unique(Tag(addr as u64)));
         });
@@ -305,6 +317,20 @@ pub extern "C" fn rs_trace_loadg(
     widened_size: vg_size_t,
 ) {
 }
+
+#[no_mangle]
+pub extern "C" fn rs_trace_wrtmp(lhs_tmp: vg_uint, s1: vg_long) {
+    unsafe {
+        if s1 != 0 {
+            vgPlain_printf(
+                b"rs_trace_wrtmp lhs_tmp: %u s1: %d\n\0".as_ptr() as *const c_char,
+                lhs_tmp,
+                s1,
+            );
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn rs_trace_wrtmp_load(lhs_tmp: vg_uint, addr: vg_addr, size: vg_size_t) {
     if_has_stack_then(addr, |stack| unsafe {
@@ -364,4 +390,140 @@ pub extern "C" fn rs_trace_puti(ix: vg_ulong, bias: vg_ulong, data: vg_ulong) {
     if_has_stack_then(data as vg_addr, |entries| unsafe {
         vgPlain_printf("rs_trace_puti %08llx\n\0".as_ptr() as *const c_char, data);
     });
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_rdtmp(tmp: vg_long) -> vg_long {
+    if tmp > 200 {
+        unsafe {
+            vgPlain_printf(
+                "hello from rs_shadow_rdtmp %lld\n\0".as_ptr() as *const c_char,
+                tmp,
+            );
+        }
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_qop(op: vg_long) -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf(
+            "hello from rs_shadow_qop %lld\n\0".as_ptr() as *const c_char,
+            op,
+        );
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_triop(op: vg_long) -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf(
+            "hello from rs_shadow_triop %lld\n\0".as_ptr() as *const c_char,
+            op,
+        );
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_binop(op: vg_long) -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf(
+            "hello from rs_shadow_binop %lld\n\0".as_ptr() as *const c_char,
+            op,
+        );
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_unop(op: vg_long) -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf(
+            "hello from rs_shadow_unop %lld\n\0".as_ptr() as *const c_char,
+            op,
+        );
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
+    unsafe {
+        if_tracked_then(addr as vg_addr, |tag| unsafe {
+            vgPlain_printf(
+                b"rs_shadow_load addr %08llx s1: %08lld has tag %d\n\0".as_ptr() as *const c_char,
+                addr,
+                s1,
+                tag.0,
+            );
+        });
+        if_has_stack_then(addr as vg_addr, |stack| unsafe {
+            vgPlain_printf(
+                b"rs_shadow_load addr %08llx s1: %08lld has stack len: %d\n\0".as_ptr()
+                    as *const c_char,
+                addr,
+                s1,
+                stack.len(),
+            );
+        });
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_const() -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf("hello from rs_shadow_const\n\0".as_ptr() as *const c_char);
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_ite(cond: vg_long, s1: vg_long, s2: vg_long, s3: vg_long) -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf(
+            "hello from rs_shadow_ite %lld\n\0".as_ptr() as *const c_char,
+            cond,
+        );
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf(
+            "hello from rs_shadow_get %lld\n\0".as_ptr() as *const c_char,
+            offset,
+        );
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_geti() -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf("hello from rs_shadow_geti\n\0".as_ptr() as *const c_char);
+    }
+    return 0;
+}
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_ccall() -> vg_long {
+    #[cfg(not_now)]
+    unsafe {
+        vgPlain_printf("hello from rs_shadow_ccall\n\0".as_ptr() as *const c_char);
+    }
+    return 0;
 }
