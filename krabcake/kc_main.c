@@ -267,8 +267,7 @@ typedef enum ExprContext {
    Superblock_Next,
 } ExprContext;
 
-static void kc_instrument_expr_eval(IRSB* sbIn,
-                                    IRSB* sbOut,
+static void kc_instrument_expr_eval(IRSB* sbOut,
                                     IRExpr* data,
                                     ExprContext context)
 {
@@ -284,38 +283,38 @@ static void kc_instrument_expr_eval(IRSB* sbIn,
                       eg. MAddF64r32(t1, t2, t3, t4)
       */
    case Iex_Qop:
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Qop.details->arg1, Expr_Qop_Arg1);
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Qop.details->arg2, Expr_Qop_Arg2);
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Qop.details->arg3, Expr_Qop_Arg3);
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Qop.details->arg4, Expr_Qop_Arg4);
+      kc_instrument_expr_eval(sbOut, data->Iex.Qop.details->arg1, Expr_Qop_Arg1);
+      kc_instrument_expr_eval(sbOut, data->Iex.Qop.details->arg2, Expr_Qop_Arg2);
+      kc_instrument_expr_eval(sbOut, data->Iex.Qop.details->arg3, Expr_Qop_Arg3);
+      kc_instrument_expr_eval(sbOut, data->Iex.Qop.details->arg4, Expr_Qop_Arg4);
       break;
       /* A ternary operation.
          ppIRExpr output: <op>(<arg1>, <arg2>, <arg3>),
                       eg. MulF64(1, 2.0, 3.0)
       */
    case Iex_Triop:
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Triop.details->arg1, Expr_Triop_Arg1);
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Triop.details->arg2, Expr_Triop_Arg2);
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Triop.details->arg3, Expr_Triop_Arg3);
+      kc_instrument_expr_eval(sbOut, data->Iex.Triop.details->arg1, Expr_Triop_Arg1);
+      kc_instrument_expr_eval(sbOut, data->Iex.Triop.details->arg2, Expr_Triop_Arg2);
+      kc_instrument_expr_eval(sbOut, data->Iex.Triop.details->arg3, Expr_Triop_Arg3);
       break;
       /* A binary operation.
          ppIRExpr output: <op>(<arg1>, <arg2>), eg. Add32(t1,t2)
       */
    case Iex_Binop:
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Binop.arg1, Expr_Binop_Arg1);
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Binop.arg2, Expr_Binop_Arg2);
+      kc_instrument_expr_eval(sbOut, data->Iex.Binop.arg1, Expr_Binop_Arg1);
+      kc_instrument_expr_eval(sbOut, data->Iex.Binop.arg2, Expr_Binop_Arg2);
       break;
       /* A unary operation.
          ppIRExpr output: <op>(<arg>), eg. Neg8(t1)
       */
    case Iex_Unop:
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Unop.arg, Expr_Unop_Arg);
+      kc_instrument_expr_eval(sbOut, data->Iex.Unop.arg, Expr_Unop_Arg);
       break;
       /* A load from memory -- a normal load, not a load-linked.
          ppIRExpr output: LD<end>:<ty>(<addr>), eg. LDle:I32(t1)
       */
    case Iex_Load:
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.Load.addr, Expr_Load_Addr);
+      kc_instrument_expr_eval(sbOut, data->Iex.Load.addr, Expr_Load_Addr);
       break;
       /* A constant-valued expression.
          ppIRExpr output: <con>, eg. 0x4:I32
@@ -328,9 +327,9 @@ static void kc_instrument_expr_eval(IRSB* sbIn,
                          eg. ITE(t6,t7,t8)
       */
    case Iex_ITE:
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.ITE.cond, Expr_ITE_Cond);
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.ITE.iftrue, Expr_ITE_IfTrue);
-      kc_instrument_expr_eval(sbIn, sbOut, data->Iex.ITE.iffalse, Expr_ITE_IfFalse);
+      kc_instrument_expr_eval(sbOut, data->Iex.ITE.cond, Expr_ITE_Cond);
+      kc_instrument_expr_eval(sbOut, data->Iex.ITE.iftrue, Expr_ITE_IfTrue);
+      kc_instrument_expr_eval(sbOut, data->Iex.ITE.iffalse, Expr_ITE_IfFalse);
       break;
 
       /* A call to a pure (no side-effects) helper C function.
@@ -354,8 +353,7 @@ static void kc_instrument_expr_eval(IRSB* sbIn,
    }
 }
 
-static void kc_instrument_put ( IRSB* sbIn,
-                                IRSB* sbOut,
+static void kc_instrument_put ( IRSB* sbOut,
                                 IRStmt *st)
 {
    tl_assert(st->tag == Ist_Put);
@@ -381,8 +379,7 @@ static void kc_instrument_put ( IRSB* sbIn,
    addStmtToIRSB( sbOut, st );
 }
 
-static void kc_instrument_puti ( IRSB* sbIn,
-                                 IRSB* sbOut,
+static void kc_instrument_puti ( IRSB* sbOut,
                                  IRStmt *st)
 {
    tl_assert(st->tag == Ist_PutI);
@@ -410,8 +407,7 @@ static void kc_instrument_puti ( IRSB* sbIn,
    addStmtToIRSB( sbOut, st );
 }
 
-static void  kc_instrument_llsc ( IRSB* sbIn,
-                                  IRSB* sbOut,
+static void  kc_instrument_llsc ( IRSB* sbOut,
                                   IRStmt *st)
 {
    tl_assert(st->tag == Ist_LLSC);
@@ -437,8 +433,7 @@ static void  kc_instrument_llsc ( IRSB* sbIn,
    addStmtToIRSB( sbOut, st );
 }
 
-static void kc_instrument_cas ( IRSB* sbIn,
-                                IRSB* sbOut,
+static void kc_instrument_cas ( IRSB* sbOut,
                                 IRStmt *st)
 {
    tl_assert(st->tag == Ist_CAS);
@@ -458,9 +453,8 @@ static void kc_instrument_cas ( IRSB* sbIn,
    addStmtToIRSB( sbOut, st );
 }
 
-static void kc_instrument_storeg (  IRSB* sbIn,
-                                    IRSB* sbOut,
-                                    IRStmt *st)
+static void kc_instrument_storeg ( IRSB* sbOut,
+                                   IRStmt *st)
 {
    // `if (<guard>) ST<end>(<addr>) = <data>` guarded store; all fields
    // unconditionally evaluated.
@@ -494,8 +488,7 @@ static void kc_instrument_storeg (  IRSB* sbIn,
    addStmtToIRSB( sbOut, st );
 }
 
-static void kc_instrument_loadg ( IRSB* sbIn,
-                                  IRSB* sbOut,
+static void kc_instrument_loadg ( IRSB* sbOut,
                                   IRStmt *st)
 {
    tl_assert(st->tag == Ist_LoadG);
@@ -535,8 +528,7 @@ static void kc_instrument_loadg ( IRSB* sbIn,
    addStmtToIRSB( sbOut, st );
 }
 
-static void kc_instrument_load ( IRSB* sbIn,
-                                 IRSB* sbOut,
+static void kc_instrument_load ( IRSB* sbOut,
                                  IRStmt *st)
 {
    // `t<tmp> = <data>` assigns value to an (SSA) temporary.
@@ -563,8 +555,7 @@ static void kc_instrument_load ( IRSB* sbIn,
    addStmtToIRSB( sbOut, st );
 }
 
-static void kc_instrument_store ( IRSB* sbIn,
-                                  IRSB* sbOut,
+static void kc_instrument_store ( IRSB* sbOut,
                                   IRStmt *st)
 {
    IRDirty* di;
@@ -708,7 +699,7 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
          // `t<tmp> = <data>` assigns value to an (SSA) temporary.
       case Ist_WrTmp: {
          if (st->Ist.WrTmp.data->tag == Iex_Load) {
-            kc_instrument_load(sbIn, sbOut, st);
+            kc_instrument_load(sbOut, st);
          } else {
             // FIXME we almost certainly need to add some tracking here
             addStmtToIRSB( sbOut, st );
@@ -717,40 +708,40 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
       }
          // `ST<end>(<addr>) = <data>` writes value to memory, unconditionally.
       case Ist_Store: {
-         kc_instrument_store( sbIn, sbOut, st );
+         kc_instrument_store(sbOut, st);
          break;
       }
          // `t<tmp> = if (<guard>) <cvt>(LD<end>(<addr>)) else <alt>` guarded load
       case Ist_LoadG: {
-         kc_instrument_loadg(sbIn, sbOut, st);
+         kc_instrument_loadg(sbOut, st);
          break;
       }
          // `if (<guard>) ST<end>(<addr>) = <data>` guarded store; all fields
          // unconditionally evaluated.
       case Ist_StoreG: {
-         kc_instrument_storeg(sbIn, sbOut, st);
+         kc_instrument_storeg(sbOut, st);
          break;
       }
          // `t<tmp> = CAS<end>(<addr> :: <expected> -> <new>)` atomic compare-and-swap
       case Ist_CAS: {
-         kc_instrument_cas(sbIn, sbOut, st);
+         kc_instrument_cas(sbOut, st);
          break;
       }
          // `result = LD<end>-Linked(<addr>)` if STOREDATA is null
          // `result = ( ST<end>-Cond(<addr>)` if STOREDATA nonnull
       case Ist_LLSC: {
-         kc_instrument_llsc(sbIn, sbOut, st);
+         kc_instrument_llsc(sbOut, st);
          break;
       }
 
          // `PUT(<offset>) = <data>` writes guest register at fixed offset
       case Ist_Put:
-         kc_instrument_put(sbIn, sbOut, st);
+         kc_instrument_put(sbOut, st);
          break;
          // `PUTI<descr>[<ix>,<bias>] = <data>` writes guest register at
          // non-fixed offset
       case Ist_PutI:
-         kc_instrument_puti(sbIn, sbOut, st);
+         kc_instrument_puti(sbOut, st);
          break;
          // == REMAINING INSTRUCTIONS NOT YET MONITORED BY KRABCAKE ==
 
