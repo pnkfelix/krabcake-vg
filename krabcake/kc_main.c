@@ -116,11 +116,13 @@ static void kc_post_clo_init(void)
 extern void rs_trace_cas ( Addr addr );
 extern void rs_trace_storeg ( Long guard, Addr addr, SizeT size );
 extern void rs_trace_loadg ( Long guard, Addr addr, SizeT size, SizeT widened_size );
-extern void rs_trace_wrtmp_load ( Addr addr, SizeT size );
+extern void rs_trace_wrtmp_load ( IRTemp lhs_tmp, Addr addr, SizeT size );
 extern void rs_trace_store ( Addr addr, ULong data, SizeT size );
 extern void rs_trace_store128 ( Addr addr, ULong data1, ULong data2, SizeT size );
 extern void rs_trace_store256 ( Addr addr, ULong data1, ULong data2, ULong data3, ULong data4, SizeT size );
 extern void rs_trace_llsc ( Addr addr );
+extern void rs_trace_put ( ULong data );
+extern void rs_trace_puti ( ULong ix, ULong bias, ULong data );
 
 static void trace_cas(Addr addr)
 {
@@ -213,10 +215,213 @@ static IRAtom* assignNew ( HChar cat, IRSB *sbOut, IRType ty, IRExpr* e )
    return mkexpr(t);
 }
 
-static IRDirty* kc_instrument_llsc(IRDirty* di,
-                                   IRSB* sbIn,
-                                   IRSB* sbOut,
-                                   IRStmt *st)
+typedef enum ExprContext {
+   /* These are the recursive occcurences of IExpr in the grammar of its definition */
+   Expr_GetI_Index = 0x1F00,
+   Expr_Qop_Arg1,
+   Expr_Qop_Arg2,
+   Expr_Qop_Arg3,
+   Expr_Qop_Arg4,
+   Expr_Triop_Arg1,
+   Expr_Triop_Arg2,
+   Expr_Triop_Arg3,
+   Expr_Binop_Arg1,
+   Expr_Binop_Arg2,
+   Expr_Unop_Arg,
+   Expr_Load_Addr,
+   Expr_CCall_Arg,
+   Expr_ITE_Cond,
+   Expr_ITE_IfTrue,
+   Expr_ITE_IfFalse,
+
+   /* These are the occurrences of IExpr _outside_ of the IExpr definition, and
+    * I am hoping they are all root entry points (i.e. that one never reaches
+    * any of these within the context of an IExpr itself), though I have not
+    * verified that yet. */
+   Stmt_AbiHint_Base,
+   Stmt_AbiHint_Nia,
+   Stmt_Put_Data,
+   Stmt_PutI_Ix,
+   Stmt_PutI_Data,
+   Stmt_WrTmp_Data,
+   Stmt_Store_Addr,
+   Stmt_Store_Data,
+   Stmt_StoreG_Addr,
+   Stmt_StoreG_Data,
+   Stmt_StoreG_Guard,
+   Stmt_LoadG_Addr,
+   Stmt_LoadG_Alt,
+   Stmt_LoadG_Guard,
+   Stmt_Cas_Addr,
+   Stmt_Cas_ExpectedHi,
+   Stmt_Cas_ExpectedLo,
+   Stmt_Cas_DataHi,
+   Stmt_Cas_DataLow,
+   Stmt_Llsc_Addr,
+   Stmt_Llsc_StoreData, // NULL => LL, non-NULL => SC
+   Stmt_Dirty_Guard, // non-null
+   Stmt_Dirty_Arg,
+   Stmt_Dirty_MemAddr,
+   Stmt_Exit_Guard,
+
+   Superblock_Next,
+} ExprContext;
+
+#if 0
+static IRDirty* kc_instrument_expr_eval(IRDirty* di,
+                                        IRSB* sbIn,
+                                        IRSB* sbOut,
+                                        IRExpr* data,
+                                        ExprContext context)
+{
+   switch (data->tag) {
+      /* should not be seen outside of Vex */ 
+   case Iex_Binder: tl_assert(0); break;
+      /* The value held by a temporary.
+         ppIRExpr output: t<tmp>, eg. t1 */
+   case Iex_RdTmp: break;
+      /* A quaternary operation.
+         ppIRExpr output: <op>(<arg1>, <arg2>, <arg3>, <arg4>),
+                      eg. MAddF64r32(t1, t2, t3, t4)
+      */
+   case Iex_Qop:
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Qop.details->arg1, Expr_Qop_Arg1);
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Qop.details->arg2, Expr_Qop_Arg2);
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Qop.details->arg3, Expr_Qop_Arg3);
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Qop.details->arg4, Expr_Qop_Arg4);
+      break;
+      /* A ternary operation.
+         ppIRExpr output: <op>(<arg1>, <arg2>, <arg3>),
+                      eg. MulF64(1, 2.0, 3.0)
+      */
+   case Iex_Triop:
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Triop.details->arg1, Expr_Triop_Arg1);
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Triop.details->arg2, Expr_Triop_Arg2);
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Triop.details->arg3, Expr_Triop_Arg3);
+      break;
+      /* A binary operation.
+         ppIRExpr output: <op>(<arg1>, <arg2>), eg. Add32(t1,t2)
+      */
+   case Iex_Binop:
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Binop.arg1, Expr_Binop_Arg1);
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Binop.arg2, Expr_Binop_Arg2);
+      break;
+      /* A unary operation.
+         ppIRExpr output: <op>(<arg>), eg. Neg8(t1)
+      */
+   case Iex_Unop:
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Unop.arg, Expr_Unop_Arg);
+      break;
+      /* A load from memory -- a normal load, not a load-linked.
+         ppIRExpr output: LD<end>:<ty>(<addr>), eg. LDle:I32(t1)
+      */
+   case Iex_Load:
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.Load.addr, Expr_Load_Addr);
+      break;
+      /* A constant-valued expression.
+         ppIRExpr output: <con>, eg. 0x4:I32
+      */
+   case Iex_Const:
+      break;
+      /* A ternary if-then-else operator. Note both iftrue and iffalse are
+         evaluated in all cases.
+         ppIRExpr output: ITE(<cond>,<iftrue>,<iffalse>),
+                         eg. ITE(t6,t7,t8)
+      */
+   case Iex_ITE:
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.ITE.cond, Expr_ITE_Cond);
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.ITE.iftrue, Expr_ITE_IfTrue);
+      di = kc_instrument_expr_eval(di, sbIn, sbOut, data->Iex.ITE.iffalse, Expr_ITE_IfFalse);
+      break;
+
+      /* A call to a pure (no side-effects) helper C function.
+         ppIRExpr output: <cee>(<args>):<retty>
+                      eg. foo{0x80489304}(t1, t2):I32 */
+   case Iex_CCall:
+      /* Read a guest register, at a fixed offset in the guest state.
+         ppIRExpr output: GET:<ty>(<offset>), eg. GET:I32(0) */
+   case Iex_Get:
+      /* Read a guest register at a non-fixed offset in the guest state; allows
+         circular indexing into parts of the guest state. 
+         ppIRExpr output: GETI<descr>[<ix>,<bias] eg. GETI(128:8xI8)[t1,0] */
+   case Iex_GetI:
+      /* Two special kinds of IRExpr, which can ONLY be used in
+         argument lists for dirty helper calls (IRDirty.args) and in NO
+         OTHER PLACES.  And then only in very limited ways.  */
+   case Iex_VECRET:
+   case Iex_GSPTR:
+      /* FIXME should I print something here to remind myself these cases are not handled? */
+      break;
+   }
+
+   return di;
+}
+#endif
+
+static IRDirty* kc_instrument_put ( IRDirty* di,
+                                    IRSB* sbIn,
+                                    IRSB* sbOut,
+                                    IRStmt *st)
+{
+   tl_assert(st->tag == Ist_Put);
+   /* FIXME review overall semantics here */
+   Int       put_offset = st->Ist.Put.offset;
+   IRExpr*   put_data   = st->Ist.Put.data;
+   /* FIXME its hard to make a generic trace routine here because the VEX IR can
+    * do things like "PUT a V128 constant value into an appropriately sized
+    * register."  So for the demo, we cheat here and don't bother about the
+    * cases that are not the right size.
+    */
+   IRType    ty         = typeOfIRExpr(sbOut->tyenv, put_data);
+   Int       put_size   = sizeofIRType(ty);
+   if (ty == Ity_I64) {
+      di = unsafeIRDirty_0_N(
+         0,
+         "rs_trace_put",
+         VG_(fnptr_to_fnentry)( &rs_trace_put ),
+         mkIRExprVec_1(put_data)
+         );
+      addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   }
+   addStmtToIRSB( sbOut, st );
+   return di;
+}
+
+static IRDirty* kc_instrument_puti ( IRDirty* di,
+                                     IRSB* sbIn,
+                                     IRSB* sbOut,
+                                     IRStmt *st)
+{
+   tl_assert(st->tag == Ist_PutI);
+   IRExpr*   puti_ix   = st->Ist.PutI.details->ix;
+   Int       puti_bias = st->Ist.PutI.details->bias;
+   IRExpr*   puti_data = st->Ist.PutI.details->data;
+   /* FIXME there is a bunch more information in PutI descr that we are just
+    * dropping here */
+   /* FIXME its hard to make a generic trace routine here because the VEX IR can
+    * do things like "PUT a V128 constant value into an appropriately sized
+    * register."  So for the demo, we cheat here and don't bother about the
+    * cases that are not the right size.
+    */
+   IRType    ty         = typeOfIRExpr(sbOut->tyenv, puti_data);
+   Int       puti_size   = sizeofIRType(ty);
+   if (ty == Ity_I64) {
+      di = unsafeIRDirty_0_N(
+         0,
+         "rs_trace_puti",
+         VG_(fnptr_to_fnentry)( &rs_trace_puti ),
+         mkIRExprVec_3(puti_ix, mkIRExpr_HWord(puti_bias), puti_data)
+         );
+      addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   }
+   addStmtToIRSB( sbOut, st );
+   return di;
+}
+
+static IRDirty* kc_instrument_llsc ( IRDirty* di,
+                                     IRSB* sbIn,
+                                     IRSB* sbOut,
+                                     IRStmt *st)
 {
    tl_assert(st->tag == Ist_LLSC);
    IRType dataTy;
@@ -242,10 +447,10 @@ static IRDirty* kc_instrument_llsc(IRDirty* di,
    return di;
 }
 
-static IRDirty* kc_instrument_cas(IRDirty* di,
-                                  IRSB* sbIn,
-                                  IRSB* sbOut,
-                                  IRStmt *st)
+static IRDirty* kc_instrument_cas ( IRDirty* di,
+                                    IRSB* sbIn,
+                                    IRSB* sbOut,
+                                    IRStmt *st)
 {
    tl_assert(st->tag == Ist_CAS);
    Int    dataSize;
@@ -265,10 +470,10 @@ static IRDirty* kc_instrument_cas(IRDirty* di,
    return di;
 }
 
-static IRDirty* kc_instrument_storeg(IRDirty* di,
-                                     IRSB* sbIn,
-                                     IRSB* sbOut,
-                                     IRStmt *st)
+static IRDirty* kc_instrument_storeg ( IRDirty* di,
+                                       IRSB* sbIn,
+                                       IRSB* sbOut,
+                                       IRStmt *st)
 {
    // `if (<guard>) ST<end>(<addr>) = <data>` guarded store; all fields
    // unconditionally evaluated.
@@ -303,10 +508,10 @@ static IRDirty* kc_instrument_storeg(IRDirty* di,
    return di;
 }
 
-static IRDirty* kc_instrument_loadg(IRDirty* di,
-                                    IRSB* sbIn,
-                                    IRSB* sbOut,
-                                    IRStmt *st)
+static IRDirty* kc_instrument_loadg ( IRDirty* di,
+                                      IRSB* sbIn,
+                                      IRSB* sbOut,
+                                      IRStmt *st)
 {
    tl_assert(st->tag == Ist_LoadG);
    IRTypeEnv* tyenv = sbOut->tyenv;
@@ -346,10 +551,10 @@ static IRDirty* kc_instrument_loadg(IRDirty* di,
    return di;
 }
 
-static IRDirty* kc_instrument_load (IRDirty* di,
-                                    IRSB* sbIn,
-                                    IRSB* sbOut,
-                                    IRStmt *st)
+static IRDirty* kc_instrument_load ( IRDirty* di,
+                                     IRSB* sbIn,
+                                     IRSB* sbOut,
+                                     IRStmt *st)
 {
    // `t<tmp> = <data>` assigns value to an (SSA) temporary.
    // This is handling specific case of `t<tmp> = LD<end>:<ty>(<addr>)`
@@ -357,6 +562,7 @@ static IRDirty* kc_instrument_load (IRDirty* di,
    /* FIXME: check if Loads can show up elsewhere in expressions */
    tl_assert(st->tag == Ist_WrTmp && st->Ist.WrTmp.data->tag == Iex_Load);
    IRTypeEnv* tyenv = sbIn->tyenv;
+   IRTemp  lhs_tmp = st->Ist.WrTmp.tmp;
    IRExpr* data = st->Ist.WrTmp.data;
    IRType  type = typeOfIRExpr(tyenv, data);
    IRExpr   *load_addr = data->Iex.Load.addr;
@@ -368,17 +574,17 @@ static IRDirty* kc_instrument_load (IRDirty* di,
       0,
       "rs_trace_wrtmp_load",
       VG_(fnptr_to_fnentry)( &rs_trace_wrtmp_load ),
-      mkIRExprVec_2(load_addr, mkIRExpr_HWord(load_size))
+      mkIRExprVec_3(mkIRExpr_HWord(lhs_tmp), load_addr, mkIRExpr_HWord(load_size))
       );
    addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
    addStmtToIRSB( sbOut, st );
    return di;
 }
 
-static IRDirty* kc_instrument_store (IRDirty* di,
-                                     IRSB* sbIn,
-                                     IRSB* sbOut,
-                                     IRStmt *st)
+static IRDirty* kc_instrument_store ( IRDirty* di,
+                                      IRSB* sbIn,
+                                      IRSB* sbOut,
+                                      IRStmt *st)
 {
    // `ST<end>(<addr>) = <data>` writes value to memory, unconditionally.
    IRTypeEnv* tyenv = sbIn->tyenv;
@@ -556,6 +762,15 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
          break;
       }
 
+         // `PUT(<offset>) = <data>` writes guest register at fixed offset
+      case Ist_Put:
+         di = kc_instrument_put(di, sbIn, sbOut, st);
+         break;
+         // `PUTI<descr>[<ix>,<bias>] = <data>` writes guest register at
+         // non-fixed offset
+      case Ist_PutI:
+         di = kc_instrument_puti(di, sbIn, sbOut, st);
+         break;
          // == REMAINING INSTRUCTIONS NOT YET MONITORED BY KRABCAKE ==
 
          // `IR-NoOp`, can be included or omitted without effect.
@@ -565,11 +780,6 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
       case Ist_IMark:
          // `AbiHint(<base>, <len>, <nia>)` says something about platform's ABI
       case Ist_AbiHint:
-         // `PUT(<offset>) = <data>` writes guest register at fixed offset
-      case Ist_Put:
-         // `PUTI<descr>[<ix>,<bias>] = <data>` writes guest register at
-         // non-fixed offset
-      case Ist_PutI:
          // `ty = DIRTY <guard> <effects> ::: <callee>(<args>)` conditional call
          // to side-effecting C function.
       case Ist_Dirty:
