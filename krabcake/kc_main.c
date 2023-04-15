@@ -267,7 +267,6 @@ typedef enum ExprContext {
    Superblock_Next,
 } ExprContext;
 
-#if 0
 static IRDirty* kc_instrument_expr_eval(IRDirty* di,
                                         IRSB* sbIn,
                                         IRSB* sbOut,
@@ -356,7 +355,6 @@ static IRDirty* kc_instrument_expr_eval(IRDirty* di,
 
    return di;
 }
-#endif
 
 static IRDirty* kc_instrument_put ( IRDirty* di,
                                     IRSB* sbIn,
