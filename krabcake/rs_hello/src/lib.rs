@@ -158,13 +158,11 @@ pub extern "C" fn rs_client_request_borrow_mut(
 ) -> bool {
     unsafe {
         vgPlain_dmsg(
-            "kc_handle_client_request, handle BORROW_MUT %llx (<- return value) %llx %llx %llx %llx\n\0".as_ptr() as *const c_char,
+            "kc_handle_client_request, handle BORROW_MUT %llx (<- return value) into ret: %llx\n\0"
+                .as_ptr() as *const c_char,
             *arg.offset(1),
-            *arg.offset(2),
-            *arg.offset(3),
-            *arg.offset(4),
-            *arg.offset(5),
-	);
+            ret,
+        );
         COUNTER = COUNTER.next();
         let addr = *arg.offset(1) as vg_addr;
         TRACKED.push((addr, COUNTER));
@@ -176,6 +174,7 @@ pub extern "C" fn rs_client_request_borrow_mut(
             v.push(Item::Unique(Tag(addr as u64)));
             STACKS.push((addr, v));
         }
+
         *ret = *arg.offset(1);
     }
     true
@@ -276,6 +275,10 @@ type vg_bool = c_uchar;
 #[allow(non_camel_case_types)]
 type vg_addr = c_ulong;
 #[allow(non_camel_case_types)]
+type vg_uint = c_uint;
+#[allow(non_camel_case_types)]
+type vg_int = c_int;
+#[allow(non_camel_case_types)]
 type vg_ulong = c_ulonglong;
 #[allow(non_camel_case_types)]
 type vg_long = c_longlong;
@@ -303,10 +306,12 @@ pub extern "C" fn rs_trace_loadg(
 ) {
 }
 #[no_mangle]
-pub extern "C" fn rs_trace_wrtmp_load(addr: vg_addr, size: vg_size_t) {
+pub extern "C" fn rs_trace_wrtmp_load(lhs_tmp: vg_uint, addr: vg_addr, size: vg_size_t) {
     if_has_stack_then(addr, |stack| unsafe {
         vgPlain_printf(
-            b"rs_trace_wrtmp_load addr %08llx has stack len: %d\n\0".as_ptr() as *const c_char,
+            b"rs_trace_wrtmp_load lhs_tmp: %u addr %08llx has stack len: %d\n\0".as_ptr()
+                as *const c_char,
+            lhs_tmp,
             addr,
             stack.len(),
         );
@@ -346,3 +351,17 @@ pub extern "C" fn rs_trace_store256(
 
 #[no_mangle]
 pub extern "C" fn rs_trace_llsc(addr: vg_addr) {}
+
+#[no_mangle]
+pub extern "C" fn rs_trace_put(data: vg_ulong) {
+    if_has_stack_then(data as vg_addr, |entries| unsafe {
+        vgPlain_printf("rs_trace_put %08llx\n\0".as_ptr() as *const c_char, data);
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn rs_trace_puti(ix: vg_ulong, bias: vg_ulong, data: vg_ulong) {
+    if_has_stack_then(data as vg_addr, |entries| unsafe {
+        vgPlain_printf("rs_trace_puti %08llx\n\0".as_ptr() as *const c_char, data);
+    });
+}
