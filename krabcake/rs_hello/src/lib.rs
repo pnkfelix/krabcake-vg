@@ -169,7 +169,7 @@ pub extern "C" fn rs_client_request_borrow_mut(
 ) -> bool {
     unsafe {
         vgPlain_dmsg(
-            "kc_handle_client_request, handle BORROW_MUT %llx (<- return value) into ret: %llx\n\0"
+            "kc_handle_client_request, handle BORROW_MUT 0x%llx (<- return value) into ret: 0x%08llx\n\0"
                 .as_ptr() as *const c_char,
             *arg.offset(1),
             ret,
@@ -368,6 +368,16 @@ pub extern "C" fn rs_trace_store(addr: vg_addr, data: vg_ulong, size: vg_size_t,
              );
        });
 
+    if_tracked_then(data as vg_addr, |tag| unsafe {
+          vgPlain_printf(
+             b"rs_trace_store data %08llx shadow_addr: %08lld shaddow_data: %08lld has tag %d\n\0".as_ptr() as *const c_char,
+             data,
+             shadow_addr,
+             shadow_data,
+             tag.0,
+             );
+       });
+
     if_has_stack_then(addr, |stack| unsafe {
         vgPlain_printf(
             b"rs_trace_store addr %08llx has stack len: %d\n\0".as_ptr() as *const c_char,
@@ -405,17 +415,85 @@ pub extern "C" fn rs_trace_store256(
 pub extern "C" fn rs_trace_llsc(addr: vg_addr) {}
 
 #[no_mangle]
-pub extern "C" fn rs_trace_put(data: vg_ulong) {
-    if_has_stack_then(data as vg_addr, |entries| unsafe {
-        vgPlain_printf("rs_trace_put %08llx\n\0".as_ptr() as *const c_char, data);
+pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data: vg_ulong) {
+   unsafe {
+        if shadow_data != 0 {
+            vgPlain_printf(
+                b"rs_trace_put offset: %lld data: 0x%llx shadow_data: %d \n\0".as_ptr() as *const c_char,
+		put_offset,
+		data,
+		shadow_data
+            );
+           }
+   }
+
+   if_tracked_then(data as vg_addr, |tag| unsafe {
+         vgPlain_printf(
+            b"rs_trace_put offset %lld data %08llx shadow_data: %08lld has tag %d\n\0".as_ptr() as *const c_char,
+	    put_offset,
+            data,
+            shadow_data,
+            tag.0,
+            );
+      });
+
+
+   if_has_stack_then(data as vg_addr, |entries| unsafe {
+        vgPlain_printf("rs_trace_put offset %lld data %08llx\n\0".as_ptr() as *const c_char, put_offset, data);
     });
 }
 
 #[no_mangle]
-pub extern "C" fn rs_trace_puti(ix: vg_ulong, bias: vg_ulong, data: vg_ulong) {
-    if_has_stack_then(data as vg_addr, |entries| unsafe {
+pub extern "C" fn rs_trace_put_just_shadow(put_offset: vg_ulong, shadow_data: vg_ulong) {
+   unsafe {
+        if shadow_data != 0 {
+            vgPlain_printf(
+                b"rs_trace_put_just_shadow offset: %lld shadow_data: %d \n\0".as_ptr() as *const c_char,
+		put_offset,
+		shadow_data
+            );
+           }
+   }
+}
+
+
+#[no_mangle]
+pub extern "C" fn rs_trace_puti(ix: vg_ulong, bias: vg_ulong, data: vg_ulong, shadow_ix: vg_ulong, shadow_data: vg_ulong) {
+   unsafe {
+        if shadow_ix != 0 || shadow_data != 0 {
+            vgPlain_printf(
+                b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0".as_ptr() as *const c_char,
+                shadow_ix,
+		shadow_data
+            );
+           }
+   }
+
+   if_tracked_then(data as vg_addr, |tag| unsafe {
+         vgPlain_printf(
+            b"rs_trace_puti data %08llx shadow_data: %08lld has tag %d\n\0".as_ptr() as *const c_char,
+            data,
+            shadow_data,
+            tag.0,
+            );
+      });
+
+   if_has_stack_then(data as vg_addr, |entries| unsafe {
         vgPlain_printf("rs_trace_puti %08llx\n\0".as_ptr() as *const c_char, data);
     });
+}
+
+#[no_mangle]
+pub extern "C" fn rs_trace_puti_just_shadow(ix: vg_ulong, bias: vg_ulong, shadow_ix: vg_ulong, shadow_data: vg_ulong) {
+   unsafe {
+        if shadow_ix != 0 || shadow_data != 0 {
+            vgPlain_printf(
+                b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0".as_ptr() as *const c_char,
+                shadow_ix,
+		shadow_data
+            );
+           }
+   }
 }
 
 #[no_mangle]

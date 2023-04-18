@@ -134,8 +134,10 @@ extern void rs_trace_store ( Addr addr, ULong data, SizeT size, ULong shadow_add
 extern void rs_trace_store128 ( Addr addr, ULong data1, ULong data2, SizeT size, ULong shadow_addr, ULong shadow_data );
 extern void rs_trace_store256 ( Addr addr, ULong data1, ULong data2, ULong data3, ULong data4, SizeT size, ULong shadow_addr, ULong shadow_data );
 extern void rs_trace_llsc ( Addr addr );
-extern void rs_trace_put ( ULong data );
-extern void rs_trace_puti ( ULong ix, ULong bias, ULong data );
+extern void rs_trace_put ( ULong put_offset, ULong data, ULong shadow_data );
+extern void rs_trace_put_just_shadow ( ULong put_offset, ULong shadow_data );
+extern void rs_trace_puti ( ULong ix, ULong bias, ULong data, ULong shadow_ix, ULong shadow_data );
+extern void rs_trace_puti_just_shadow ( ULong ix, ULong bias, ULong shadow_ix, ULong shadow_data );
 
 static void trace_cas(Addr addr)
 {
@@ -253,9 +255,9 @@ typedef enum ExprContext {
     * verified that yet. */
    Stmt_AbiHint_Base,
    Stmt_AbiHint_Nia,
-   Stmt_Put_Data,
-   Stmt_PutI_Ix,
-   Stmt_PutI_Data,
+   Stmt_Put_Data,   // in-progress
+   Stmt_PutI_Ix,    // in-progress
+   Stmt_PutI_Data,  // in-progress
    Stmt_WrTmp_Data, // "done"
    Stmt_Store_Addr, // in-progress
    Stmt_Store_Data, // in-progress
@@ -564,7 +566,8 @@ static void kc_instrument_expr_eval(IRSB* sbOut,
 }
 
 static void kc_instrument_put ( IRSB* sbOut,
-                                IRStmt *st)
+                                IRStmt *st,
+                                IRExpr* shadow_data )
 {
    tl_assert(st->tag == Ist_Put);
    /* FIXME review overall semantics here */
@@ -577,20 +580,30 @@ static void kc_instrument_put ( IRSB* sbOut,
     */
    IRType    ty         = typeOfIRExpr(sbOut->tyenv, put_data);
    Int       put_size   = sizeofIRType(ty);
+   IRDirty*  di;
    if (ty == Ity_I64) {
-      IRDirty *di = unsafeIRDirty_0_N(
+      di = unsafeIRDirty_0_N(
          0,
          "rs_trace_put",
          VG_(fnptr_to_fnentry)( &rs_trace_put ),
-         mkIRExprVec_1(put_data)
+         mkIRExprVec_3(mkIRExpr_HWord(put_offset), put_data, shadow_data)
          );
-      addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   } else {
+      di = unsafeIRDirty_0_N(
+         0,
+         "rs_trace_put_just_shadow",
+         VG_(fnptr_to_fnentry)( &rs_trace_put_just_shadow ),
+         mkIRExprVec_2(mkIRExpr_HWord(put_offset), shadow_data)
+         );
    }
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
    addStmtToIRSB( sbOut, st );
 }
 
 static void kc_instrument_puti ( IRSB* sbOut,
-                                 IRStmt *st)
+                                 IRStmt *st,
+                                 IRExpr* shadow_ix,
+                                 IRExpr* shadow_data )
 {
    tl_assert(st->tag == Ist_PutI);
    IRExpr*   puti_ix   = st->Ist.PutI.details->ix;
@@ -605,15 +618,23 @@ static void kc_instrument_puti ( IRSB* sbOut,
     */
    IRType    ty         = typeOfIRExpr(sbOut->tyenv, puti_data);
    Int       puti_size   = sizeofIRType(ty);
+   IRDirty*  di;
    if (ty == Ity_I64) {
-      IRDirty* di = unsafeIRDirty_0_N(
+      di = unsafeIRDirty_0_N(
          0,
          "rs_trace_puti",
          VG_(fnptr_to_fnentry)( &rs_trace_puti ),
-         mkIRExprVec_3(puti_ix, mkIRExpr_HWord(puti_bias), puti_data)
+         mkIRExprVec_5(puti_ix, mkIRExpr_HWord(puti_bias), puti_data, shadow_ix, shadow_data)
          );
-      addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
+   } else {
+      di = unsafeIRDirty_0_N(
+         0,
+         "rs_trace_puti_just_shadow",
+         VG_(fnptr_to_fnentry)( &rs_trace_puti_just_shadow ),
+         mkIRExprVec_4(puti_ix, mkIRExpr_HWord(puti_bias), shadow_ix, shadow_data)
+         );
    }
+   addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
    addStmtToIRSB( sbOut, st );
 }
 
@@ -939,14 +960,19 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
       }
 
          // `PUT(<offset>) = <data>` writes guest register at fixed offset
-      case Ist_Put:
-         kc_instrument_put(sbOut, st);
+      case Ist_Put: {
+         IRExpr* shadow_data = kc_construct_shadow_eval(sbOut, st->Ist.Put.data, Stmt_Put_Data);
+         kc_instrument_put(sbOut, st, shadow_data);
          break;
+      }
          // `PUTI<descr>[<ix>,<bias>] = <data>` writes guest register at
          // non-fixed offset
-      case Ist_PutI:
-         kc_instrument_puti(sbOut, st);
+      case Ist_PutI: {
+         IRExpr* shadow_ix = kc_construct_shadow_eval(sbOut, st->Ist.PutI.details->ix, Stmt_PutI_Ix);
+         IRExpr* shadow_data = kc_construct_shadow_eval(sbOut, st->Ist.PutI.details->data, Stmt_PutI_Data);
+         kc_instrument_puti(sbOut, st, shadow_ix, shadow_data);
          break;
+      }
          // == REMAINING INSTRUCTIONS NOT YET MONITORED BY KRABCAKE ==
 
          // `IR-NoOp`, can be included or omitted without effect.
