@@ -130,9 +130,9 @@ extern void rs_trace_storeg ( Long guard, Addr addr, SizeT size );
 extern void rs_trace_loadg ( Long guard, Addr addr, SizeT size, SizeT widened_size );
 extern void rs_trace_wrtmp ( IRTemp lhs_tmp, ULong shadow_data );
 extern void rs_trace_wrtmp_load ( IRTemp lhs_tmp, Addr addr, SizeT size );
-extern void rs_trace_store ( Addr addr, ULong data, SizeT size );
-extern void rs_trace_store128 ( Addr addr, ULong data1, ULong data2, SizeT size );
-extern void rs_trace_store256 ( Addr addr, ULong data1, ULong data2, ULong data3, ULong data4, SizeT size );
+extern void rs_trace_store ( Addr addr, ULong data, SizeT size, ULong shadow_addr, ULong shadow_data );
+extern void rs_trace_store128 ( Addr addr, ULong data1, ULong data2, SizeT size, ULong shadow_addr, ULong shadow_data );
+extern void rs_trace_store256 ( Addr addr, ULong data1, ULong data2, ULong data3, ULong data4, SizeT size, ULong shadow_addr, ULong shadow_data );
 extern void rs_trace_llsc ( Addr addr );
 extern void rs_trace_put ( ULong data );
 extern void rs_trace_puti ( ULong ix, ULong bias, ULong data );
@@ -256,9 +256,9 @@ typedef enum ExprContext {
    Stmt_Put_Data,
    Stmt_PutI_Ix,
    Stmt_PutI_Data,
-   Stmt_WrTmp_Data,
-   Stmt_Store_Addr,
-   Stmt_Store_Data,
+   Stmt_WrTmp_Data, // "done"
+   Stmt_Store_Addr, // in-progress
+   Stmt_Store_Data, // in-progress
    Stmt_StoreG_Addr,
    Stmt_StoreG_Data,
    Stmt_StoreG_Guard,
@@ -760,7 +760,9 @@ static void kc_instrument_wrtmp ( IRSB* sbOut,
 }
 
 static void kc_instrument_store ( IRSB* sbOut,
-                                  IRStmt *st)
+                                  IRStmt* st,
+                                  IRExpr* shadow_addr,
+                                  IRExpr* shadow_data )
 {
    IRDirty* di;
    // `ST<end>(<addr>) = <data>` writes value to memory, unconditionally.
@@ -812,7 +814,7 @@ static void kc_instrument_store ( IRSB* sbOut,
          0,
          "rs_trace_store",
          VG_(fnptr_to_fnentry)( &rs_trace_store ),
-         mkIRExprVec_3(store_addr, store_data, mkIRExpr_HWord(store_size))
+         mkIRExprVec_5(store_addr, store_data, mkIRExpr_HWord(store_size), shadow_addr, shadow_data)
          );
       break;
    }
@@ -845,7 +847,7 @@ static void kc_instrument_store ( IRSB* sbOut,
          0,
          "rs_trace_store128",
          VG_(fnptr_to_fnentry)( &rs_trace_store128 ),
-         mkIRExprVec_4(store_addr, store_data1, store_data2, mkIRExpr_HWord(store_size))
+         mkIRExprVec_6(store_addr, store_data1, store_data2, mkIRExpr_HWord(store_size), shadow_addr, shadow_data)
          );
       break;
    }
@@ -862,7 +864,7 @@ static void kc_instrument_store ( IRSB* sbOut,
          0,
          "rs_trace_store256",
          VG_(fnptr_to_fnentry)( &rs_trace_store256 ),
-         mkIRExprVec_6(store_addr, store_data1, store_data2, store_data3, store_data4, mkIRExpr_HWord(store_size))
+         mkIRExprVec_8(store_addr, store_data1, store_data2, store_data3, store_data4, mkIRExpr_HWord(store_size), shadow_addr, shadow_data)
          );
       break;
    }
@@ -908,7 +910,9 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
       }
          // `ST<end>(<addr>) = <data>` writes value to memory, unconditionally.
       case Ist_Store: {
-         kc_instrument_store(sbOut, st);
+         IRExpr* shadow_addr = kc_construct_shadow_eval(sbOut, st->Ist.Store.addr, Stmt_Store_Addr);
+         IRExpr* shadow_data = kc_construct_shadow_eval(sbOut, st->Ist.Store.data, Stmt_Store_Data);
+         kc_instrument_store(sbOut, st, shadow_addr, shadow_data);
          break;
       }
          // `t<tmp> = if (<guard>) <cvt>(LD<end>(<addr>)) else <alt>` guarded load

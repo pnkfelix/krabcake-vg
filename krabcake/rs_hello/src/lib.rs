@@ -345,7 +345,29 @@ pub extern "C" fn rs_trace_wrtmp_load(lhs_tmp: vg_uint, addr: vg_addr, size: vg_
 }
 
 #[no_mangle]
-pub extern "C" fn rs_trace_store(addr: vg_addr, data: vg_ulong, size: vg_size_t) {
+pub extern "C" fn rs_trace_store(addr: vg_addr, data: vg_ulong, size: vg_size_t, shadow_addr: vg_ulong, shadow_data: vg_ulong) {
+    unsafe {
+        if shadow_addr != 0 || shadow_data != 0 {
+            vgPlain_printf(
+                b"rs_trace_store addr: 0x%llx data: 0x%llx shadow_addr: %d shadow_data: %d \n\0".as_ptr() as *const c_char,
+		addr,
+		data,
+		shadow_addr,	
+		shadow_data
+            );
+        }
+    }
+
+    if_tracked_then(addr as vg_addr, |tag| unsafe {
+          vgPlain_printf(
+             b"rs_trace_store addr %08llx shadow_addr: %08lld shaddow_data: %08lld has tag %d\n\0".as_ptr() as *const c_char,
+             addr,
+             shadow_addr,
+             shadow_data,
+             tag.0,
+             );
+       });
+
     if_has_stack_then(addr, |stack| unsafe {
         vgPlain_printf(
             b"rs_trace_store addr %08llx has stack len: %d\n\0".as_ptr() as *const c_char,
@@ -361,6 +383,8 @@ pub extern "C" fn rs_trace_store128(
     data1: vg_ulong,
     data2: vg_ulong,
     size: vg_size_t,
+    shadow_addr: vg_ulong,
+    shadow_data: vg_ulong,
 ) {
 }
 
@@ -372,6 +396,8 @@ pub extern "C" fn rs_trace_store256(
     data3: vg_ulong,
     data4: vg_ulong,
     size: vg_size_t,
+    shadow_addr: vg_ulong,
+    shadow_data: vg_ulong,
 ) {
 }
 
