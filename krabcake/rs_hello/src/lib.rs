@@ -136,6 +136,44 @@ static mut TRACKED: Vec<(vg_addr, Tag)> = Vec::new();
 
 static mut STACKS: Vec<(vg_addr, Vec<Item>)> = Vec::new();
 
+// FIXME UGLY HACK
+// this is a big bad hack: I haven't managed to connect up
+// the client request return point into the rest of the
+// data-flow of the krabcake-rewritten code. So for now,
+// use a one-length event queue that each memory operation
+// that I *have* instrumented will check, and will process
+// the relevant event if it sees the corresponding memory
+// location.
+
+static mut STACKED_BORROW_EVENT: Option<(SbEventKind, vg_addr, Tag)> = None;
+
+#[derive(Copy, Clone)]
+enum SbEventKind {
+   BorrowMut = 0x2000,
+   BorrowShr,
+   AsRaw,
+   AsBorrowMut,
+   AsBorrowShr,
+   RetagFnPrologue,
+   RetagAssign,
+   RetagRaw,
+}
+
+impl SbEventKind {
+   fn c_str(&self) -> *const c_char {
+      (match *self {
+         SbEventKind::BorrowMut => b"BorrowMut\0".as_ptr(),
+         SbEventKind::BorrowShr => b"BorrowShr\0".as_ptr(),
+         SbEventKind::AsRaw => b"AsRaw\0".as_ptr(),
+         SbEventKind::AsBorrowMut => b"AsBorrowMut\0".as_ptr(),
+         SbEventKind::AsBorrowShr => b"AsBorrowShr\0".as_ptr(),
+         SbEventKind::RetagFnPrologue => b"RetagFnPrologue\0".as_ptr(),
+         SbEventKind::RetagAssign => b"RetagAssign\0".as_ptr(),
+         SbEventKind::RetagRaw => b"RetagRaw\0".as_ptr(),
+      }) as *const c_char
+   }
+}
+
 fn if_tracked_then<T>(addr: vg_addr, process_tag: impl FnOnce(Tag) -> T) -> Option<T> {
     unsafe {
         for entry in &TRACKED {
@@ -186,6 +224,8 @@ pub extern "C" fn rs_client_request_borrow_mut(
             v.push(Item::Unique(Tag(addr as u64)));
             STACKS.push((addr, v));
         }
+        assert!(STACKED_BORROW_EVENT.is_none());
+        STACKED_BORROW_EVENT = Some((SbEventKind::BorrowMut, addr, COUNTER));
 
         *ret = *arg.offset(1);
     }
@@ -560,9 +600,23 @@ pub extern "C" fn rs_shadow_unop(op: vg_long) -> vg_long {
 #[no_mangle]
 pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
     unsafe {
+        if let Some(event) = STACKED_BORROW_EVENT {
+          if event.1 == addr as vg_addr {
+            let ret = (event.2).0;
+            vgPlain_printf(
+               b"rs_shadow_load event addr: %08llx s1: %08lld has event %s returning tag: %d\n\0".as_ptr() as *const c_char,
+               addr,
+               s1,
+               (event.0).c_str(),
+               ret,
+            );
+            STACKED_BORROW_EVENT = None;
+            return ret as vg_long;
+          }
+        }
         if_tracked_then(addr as vg_addr, |tag| unsafe {
             vgPlain_printf(
-                b"rs_shadow_load addr %08llx s1: %08lld has tag %d\n\0".as_ptr() as *const c_char,
+                b"rs_shadow_load tracked addr %08llx s1: %08lld has tag %d\n\0".as_ptr() as *const c_char,
                 addr,
                 s1,
                 tag.0,
