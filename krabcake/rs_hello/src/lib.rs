@@ -132,7 +132,7 @@ enum Item {
 // shadowing of values. I.e. the tag here needs to be attached to the
 // location where an address itself is being stored, and needs to flow
 // along with the address as it is copied from place to place.
-static mut TRACKED: Vec<(vg_addr, Tag)> = Vec::new();
+static mut TRACKED_ADDRS: Vec<(vg_addr, Tag)> = Vec::new();
 
 static mut STACKS: Vec<(vg_addr, Vec<Item>)> = Vec::new();
 
@@ -149,34 +149,34 @@ static mut STACKED_BORROW_EVENT: Option<(SbEventKind, vg_addr, Tag)> = None;
 
 #[derive(Copy, Clone)]
 enum SbEventKind {
-   BorrowMut = 0x2000,
-   BorrowShr,
-   AsRaw,
-   AsBorrowMut,
-   AsBorrowShr,
-   RetagFnPrologue,
-   RetagAssign,
-   RetagRaw,
+    BorrowMut = 0x2000,
+    BorrowShr,
+    AsRaw,
+    AsBorrowMut,
+    AsBorrowShr,
+    RetagFnPrologue,
+    RetagAssign,
+    RetagRaw,
 }
 
 impl SbEventKind {
-   fn c_str(&self) -> *const c_char {
-      (match *self {
-         SbEventKind::BorrowMut => b"BorrowMut\0".as_ptr(),
-         SbEventKind::BorrowShr => b"BorrowShr\0".as_ptr(),
-         SbEventKind::AsRaw => b"AsRaw\0".as_ptr(),
-         SbEventKind::AsBorrowMut => b"AsBorrowMut\0".as_ptr(),
-         SbEventKind::AsBorrowShr => b"AsBorrowShr\0".as_ptr(),
-         SbEventKind::RetagFnPrologue => b"RetagFnPrologue\0".as_ptr(),
-         SbEventKind::RetagAssign => b"RetagAssign\0".as_ptr(),
-         SbEventKind::RetagRaw => b"RetagRaw\0".as_ptr(),
-      }) as *const c_char
-   }
+    fn c_str(&self) -> *const c_char {
+        (match *self {
+            SbEventKind::BorrowMut => b"BorrowMut\0".as_ptr(),
+            SbEventKind::BorrowShr => b"BorrowShr\0".as_ptr(),
+            SbEventKind::AsRaw => b"AsRaw\0".as_ptr(),
+            SbEventKind::AsBorrowMut => b"AsBorrowMut\0".as_ptr(),
+            SbEventKind::AsBorrowShr => b"AsBorrowShr\0".as_ptr(),
+            SbEventKind::RetagFnPrologue => b"RetagFnPrologue\0".as_ptr(),
+            SbEventKind::RetagAssign => b"RetagAssign\0".as_ptr(),
+            SbEventKind::RetagRaw => b"RetagRaw\0".as_ptr(),
+        }) as *const c_char
+    }
 }
 
 fn if_tracked_then<T>(addr: vg_addr, process_tag: impl FnOnce(Tag) -> T) -> Option<T> {
     unsafe {
-        for entry in &TRACKED {
+        for entry in &TRACKED_ADDRS {
             if entry.0 == addr {
                 return Some(process_tag(entry.1));
             }
@@ -215,7 +215,7 @@ pub extern "C" fn rs_client_request_borrow_mut(
         COUNTER = COUNTER.next();
         let addr = *arg.offset(1) as vg_addr;
         let addr_recv = ret as vg_addr;
-        TRACKED.push((addr_recv, COUNTER));
+        TRACKED_ADDRS.push((addr_recv, COUNTER));
         let lookup = if_has_stack_then(addr, |entries| {
             entries.push(Item::Unique(Tag(addr as u64)));
         });
@@ -385,38 +385,47 @@ pub extern "C" fn rs_trace_wrtmp_load(lhs_tmp: vg_uint, addr: vg_addr, size: vg_
 }
 
 #[no_mangle]
-pub extern "C" fn rs_trace_store(addr: vg_addr, data: vg_ulong, size: vg_size_t, shadow_addr: vg_ulong, shadow_data: vg_ulong) {
+pub extern "C" fn rs_trace_store(
+    addr: vg_addr,
+    data: vg_ulong,
+    size: vg_size_t,
+    shadow_addr: vg_ulong,
+    shadow_data: vg_ulong,
+) {
     unsafe {
         if shadow_addr != 0 || shadow_data != 0 {
             vgPlain_printf(
-                b"rs_trace_store addr: 0x%llx data: 0x%llx shadow_addr: %d shadow_data: %d \n\0".as_ptr() as *const c_char,
-		addr,
-		data,
-		shadow_addr,	
-		shadow_data
+                b"rs_trace_store addr: 0x%llx data: 0x%llx shadow_addr: %d shadow_data: %d \n\0"
+                    .as_ptr() as *const c_char,
+                addr,
+                data,
+                shadow_addr,
+                shadow_data,
             );
         }
     }
 
     if_tracked_then(addr as vg_addr, |tag| unsafe {
-          vgPlain_printf(
-             b"rs_trace_store addr %08llx shadow_addr: %08lld shaddow_data: %08lld has tag %d\n\0".as_ptr() as *const c_char,
-             addr,
-             shadow_addr,
-             shadow_data,
-             tag.0,
-             );
-       });
+        vgPlain_printf(
+            b"rs_trace_store addr %08llx shadow_addr: %08lld shaddow_data: %08lld has tag %d\n\0"
+                .as_ptr() as *const c_char,
+            addr,
+            shadow_addr,
+            shadow_data,
+            tag.0,
+        );
+    });
 
     if_tracked_then(data as vg_addr, |tag| unsafe {
-          vgPlain_printf(
-             b"rs_trace_store data %08llx shadow_addr: %08lld shaddow_data: %08lld has tag %d\n\0".as_ptr() as *const c_char,
-             data,
-             shadow_addr,
-             shadow_data,
-             tag.0,
-             );
-       });
+        vgPlain_printf(
+            b"rs_trace_store data %08llx shadow_addr: %08lld shaddow_data: %08lld has tag %d\n\0"
+                .as_ptr() as *const c_char,
+            data,
+            shadow_addr,
+            shadow_data,
+            tag.0,
+        );
+    });
 
     if_has_stack_then(addr, |stack| unsafe {
         vgPlain_printf(
@@ -456,84 +465,101 @@ pub extern "C" fn rs_trace_llsc(addr: vg_addr) {}
 
 #[no_mangle]
 pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data: vg_ulong) {
-   unsafe {
+    unsafe {
         if shadow_data != 0 {
             vgPlain_printf(
-                b"rs_trace_put offset: %lld data: 0x%llx shadow_data: %d \n\0".as_ptr() as *const c_char,
-		put_offset,
-		data,
-		shadow_data
+                b"rs_trace_put offset: %lld data: 0x%llx shadow_data: %d \n\0".as_ptr()
+                    as *const c_char,
+                put_offset,
+                data,
+                shadow_data,
             );
-           }
-   }
+        }
+    }
 
-   if_tracked_then(data as vg_addr, |tag| unsafe {
-         vgPlain_printf(
-            b"rs_trace_put offset %lld data %08llx shadow_data: %08lld has tag %d\n\0".as_ptr() as *const c_char,
-	    put_offset,
+    if_tracked_then(data as vg_addr, |tag| unsafe {
+        vgPlain_printf(
+            b"rs_trace_put offset %lld data %08llx shadow_data: %08lld has tag %d\n\0".as_ptr()
+                as *const c_char,
+            put_offset,
             data,
             shadow_data,
             tag.0,
-            );
-      });
+        );
+    });
 
-
-   if_has_stack_then(data as vg_addr, |entries| unsafe {
-        vgPlain_printf("rs_trace_put offset %lld data %08llx\n\0".as_ptr() as *const c_char, put_offset, data);
+    if_has_stack_then(data as vg_addr, |entries| unsafe {
+        vgPlain_printf(
+            "rs_trace_put offset %lld data %08llx\n\0".as_ptr() as *const c_char,
+            put_offset,
+            data,
+        );
     });
 }
 
 #[no_mangle]
 pub extern "C" fn rs_trace_put_just_shadow(put_offset: vg_ulong, shadow_data: vg_ulong) {
-   unsafe {
+    unsafe {
         if shadow_data != 0 {
             vgPlain_printf(
-                b"rs_trace_put_just_shadow offset: %lld shadow_data: %d \n\0".as_ptr() as *const c_char,
-		put_offset,
-		shadow_data
+                b"rs_trace_put_just_shadow offset: %lld shadow_data: %d \n\0".as_ptr()
+                    as *const c_char,
+                put_offset,
+                shadow_data,
             );
-           }
-   }
+        }
+    }
 }
 
-
 #[no_mangle]
-pub extern "C" fn rs_trace_puti(ix: vg_ulong, bias: vg_ulong, data: vg_ulong, shadow_ix: vg_ulong, shadow_data: vg_ulong) {
-   unsafe {
+pub extern "C" fn rs_trace_puti(
+    ix: vg_ulong,
+    bias: vg_ulong,
+    data: vg_ulong,
+    shadow_ix: vg_ulong,
+    shadow_data: vg_ulong,
+) {
+    unsafe {
         if shadow_ix != 0 || shadow_data != 0 {
             vgPlain_printf(
                 b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0".as_ptr() as *const c_char,
                 shadow_ix,
-		shadow_data
+                shadow_data,
             );
-           }
-   }
+        }
+    }
 
-   if_tracked_then(data as vg_addr, |tag| unsafe {
-         vgPlain_printf(
-            b"rs_trace_puti data %08llx shadow_data: %08lld has tag %d\n\0".as_ptr() as *const c_char,
+    if_tracked_then(data as vg_addr, |tag| unsafe {
+        vgPlain_printf(
+            b"rs_trace_puti data %08llx shadow_data: %08lld has tag %d\n\0".as_ptr()
+                as *const c_char,
             data,
             shadow_data,
             tag.0,
-            );
-      });
+        );
+    });
 
-   if_has_stack_then(data as vg_addr, |entries| unsafe {
+    if_has_stack_then(data as vg_addr, |entries| unsafe {
         vgPlain_printf("rs_trace_puti %08llx\n\0".as_ptr() as *const c_char, data);
     });
 }
 
 #[no_mangle]
-pub extern "C" fn rs_trace_puti_just_shadow(ix: vg_ulong, bias: vg_ulong, shadow_ix: vg_ulong, shadow_data: vg_ulong) {
-   unsafe {
+pub extern "C" fn rs_trace_puti_just_shadow(
+    ix: vg_ulong,
+    bias: vg_ulong,
+    shadow_ix: vg_ulong,
+    shadow_data: vg_ulong,
+) {
+    unsafe {
         if shadow_ix != 0 || shadow_data != 0 {
             vgPlain_printf(
                 b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0".as_ptr() as *const c_char,
                 shadow_ix,
-		shadow_data
+                shadow_data,
             );
-           }
-   }
+        }
+    }
 }
 
 #[no_mangle]
@@ -601,22 +627,23 @@ pub extern "C" fn rs_shadow_unop(op: vg_long) -> vg_long {
 pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
     unsafe {
         if let Some(event) = STACKED_BORROW_EVENT {
-          if event.1 == addr as vg_addr {
-            let ret = (event.2).0;
-            vgPlain_printf(
+            if event.1 == addr as vg_addr {
+                let ret = (event.2).0;
+                vgPlain_printf(
                b"rs_shadow_load event addr: %08llx s1: %08lld has event %s returning tag: %d\n\0".as_ptr() as *const c_char,
                addr,
                s1,
                (event.0).c_str(),
                ret,
             );
-            STACKED_BORROW_EVENT = None;
-            return ret as vg_long;
-          }
+                STACKED_BORROW_EVENT = None;
+                return ret as vg_long;
+            }
         }
         if_tracked_then(addr as vg_addr, |tag| unsafe {
             vgPlain_printf(
-                b"rs_shadow_load tracked addr %08llx s1: %08lld has tag %d\n\0".as_ptr() as *const c_char,
+                b"rs_shadow_load tracked addr %08llx s1: %08lld has tag %d\n\0".as_ptr()
+                    as *const c_char,
                 addr,
                 s1,
                 tag.0,
