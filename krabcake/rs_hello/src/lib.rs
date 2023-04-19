@@ -174,7 +174,7 @@ impl SbEventKind {
     }
 }
 
-fn if_tracked_then<T>(addr: vg_addr, process_tag: impl FnOnce(Tag) -> T) -> Option<T> {
+fn if_addr_tracked_then<T>(addr: vg_addr, process_tag: impl FnOnce(Tag) -> T) -> Option<T> {
     unsafe {
         for entry in &TRACKED_ADDRS {
             if entry.0 == addr {
@@ -185,7 +185,7 @@ fn if_tracked_then<T>(addr: vg_addr, process_tag: impl FnOnce(Tag) -> T) -> Opti
     None
 }
 
-fn if_has_stack_then<T>(
+fn if_addr_has_stack_then<T>(
     addr: vg_addr,
     process_stack: impl FnOnce(&mut Vec<Item>) -> T,
 ) -> Option<T> {
@@ -216,7 +216,7 @@ pub extern "C" fn rs_client_request_borrow_mut(
         let addr = *arg.offset(1) as vg_addr;
         let addr_recv = ret as vg_addr;
         TRACKED_ADDRS.push((addr_recv, COUNTER));
-        let lookup = if_has_stack_then(addr, |entries| {
+        let lookup = if_addr_has_stack_then(addr, |entries| {
             entries.push(Item::Unique(Tag(addr as u64)));
         });
         if lookup.is_none() {
@@ -373,7 +373,7 @@ pub extern "C" fn rs_trace_wrtmp(lhs_tmp: vg_uint, s1: vg_long) {
 
 #[no_mangle]
 pub extern "C" fn rs_trace_wrtmp_load(lhs_tmp: vg_uint, addr: vg_addr, size: vg_size_t) {
-    if_has_stack_then(addr, |stack| unsafe {
+    if_addr_has_stack_then(addr, |stack| unsafe {
         vgPlain_printf(
             b"rs_trace_wrtmp_load lhs_tmp: %u addr %08llx has stack len: %d\n\0".as_ptr()
                 as *const c_char,
@@ -405,7 +405,7 @@ pub extern "C" fn rs_trace_store(
         }
     }
 
-    if_tracked_then(addr as vg_addr, |tag| unsafe {
+    if_addr_tracked_then(addr as vg_addr, |tag| unsafe {
         vgPlain_printf(
             b"rs_trace_store addr %08llx shadow_addr: %08lld shaddow_data: %08lld has tag %d\n\0"
                 .as_ptr() as *const c_char,
@@ -416,7 +416,7 @@ pub extern "C" fn rs_trace_store(
         );
     });
 
-    if_tracked_then(data as vg_addr, |tag| unsafe {
+    if_addr_tracked_then(data as vg_addr, |tag| unsafe {
         vgPlain_printf(
             b"rs_trace_store data %08llx shadow_addr: %08lld shaddow_data: %08lld has tag %d\n\0"
                 .as_ptr() as *const c_char,
@@ -427,7 +427,7 @@ pub extern "C" fn rs_trace_store(
         );
     });
 
-    if_has_stack_then(addr, |stack| unsafe {
+    if_addr_has_stack_then(addr, |stack| unsafe {
         vgPlain_printf(
             b"rs_trace_store addr %08llx has stack len: %d\n\0".as_ptr() as *const c_char,
             addr,
@@ -477,7 +477,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
         }
     }
 
-    if_tracked_then(data as vg_addr, |tag| unsafe {
+    if_addr_tracked_then(data as vg_addr, |tag| unsafe {
         vgPlain_printf(
             b"rs_trace_put offset %lld data %08llx shadow_data: %08lld has tag %d\n\0".as_ptr()
                 as *const c_char,
@@ -488,7 +488,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
         );
     });
 
-    if_has_stack_then(data as vg_addr, |entries| unsafe {
+    if_addr_has_stack_then(data as vg_addr, |entries| unsafe {
         vgPlain_printf(
             "rs_trace_put offset %lld data %08llx\n\0".as_ptr() as *const c_char,
             put_offset,
@@ -529,7 +529,7 @@ pub extern "C" fn rs_trace_puti(
         }
     }
 
-    if_tracked_then(data as vg_addr, |tag| unsafe {
+    if_addr_tracked_then(data as vg_addr, |tag| unsafe {
         vgPlain_printf(
             b"rs_trace_puti data %08llx shadow_data: %08lld has tag %d\n\0".as_ptr()
                 as *const c_char,
@@ -539,7 +539,7 @@ pub extern "C" fn rs_trace_puti(
         );
     });
 
-    if_has_stack_then(data as vg_addr, |entries| unsafe {
+    if_addr_has_stack_then(data as vg_addr, |entries| unsafe {
         vgPlain_printf("rs_trace_puti %08llx\n\0".as_ptr() as *const c_char, data);
     });
 }
@@ -640,7 +640,7 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
                 return ret as vg_long;
             }
         }
-        if_tracked_then(addr as vg_addr, |tag| unsafe {
+        if_addr_tracked_then(addr as vg_addr, |tag| unsafe {
             vgPlain_printf(
                 b"rs_shadow_load tracked addr %08llx s1: %08lld has tag %d\n\0".as_ptr()
                     as *const c_char,
@@ -649,7 +649,7 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
                 tag.0,
             );
         });
-        if_has_stack_then(addr as vg_addr, |stack| unsafe {
+        if_addr_has_stack_then(addr as vg_addr, |stack| unsafe {
             vgPlain_printf(
                 b"rs_shadow_load addr %08llx s1: %08lld has stack len: %d\n\0".as_ptr()
                     as *const c_char,
