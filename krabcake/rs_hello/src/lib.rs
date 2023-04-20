@@ -769,12 +769,15 @@ pub extern "C" fn rs_shadow_ite(cond: vg_long, s1: vg_long, s2: vg_long, s3: vg_
 
 #[no_mangle]
 pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
-    #[cfg(not_now)]
-    unsafe {
-        vgPlain_printf(
-            "hello from rs_shadow_get %lld\n\0".as_ptr() as *const c_char,
-            offset,
-        );
+    if let Some(tag) = if_greg_tracked_then(offset as vg_ulong, |tag| tag) {
+        unsafe {
+            vgPlain_printf(
+                "hello from rs_shadow_get %lld tag: %d\n\0".as_ptr() as *const c_char,
+                offset,
+                tag.0,
+            );
+        }
+        return tag.0 as vg_long;
     }
     return 0;
 }
