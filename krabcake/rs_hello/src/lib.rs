@@ -14,6 +14,10 @@ use core::alloc::{GlobalAlloc, Layout};
 // Can now import and use anything in alloc
 use alloc::vec::Vec;
 
+use self::vex_ir::IROp;
+
+mod vex_ir;
+
 extern "C" {
     // From krabcake-vg/include/pub_tool_mallocfree.h
     // Nb: the allocators *always succeed* -- they never return NULL (Valgrind
@@ -594,49 +598,82 @@ pub extern "C" fn rs_shadow_rdtmp(tmp: vg_long) -> vg_long {
 }
 
 #[no_mangle]
-pub extern "C" fn rs_shadow_qop(op: vg_long) -> vg_long {
-    #[cfg(not_now)]
-    unsafe {
-        vgPlain_printf(
-            "hello from rs_shadow_qop %lld\n\0".as_ptr() as *const c_char,
-            op,
-        );
+pub extern "C" fn rs_shadow_qop(
+    op: vg_long,
+    s1: vg_long,
+    s2: vg_long,
+    s3: vg_long,
+    s4: vg_long,
+) -> vg_long {
+    if (s1 + s2 + s3 + s4) != 0 {
+        unsafe {
+            vgPlain_printf("hello from rs_shadow_qop \0".as_ptr() as *const c_char);
+            ppIROp(op);
+            vgPlain_printf(
+                " (0x%llx) s1: %d s2: %d s3: %d s4: %d\n\0".as_ptr() as *const c_char,
+                op,
+                s1,
+                s2,
+                s3,
+                s4,
+            );
+        }
     }
     return 0;
 }
 
 #[no_mangle]
-pub extern "C" fn rs_shadow_triop(op: vg_long) -> vg_long {
-    #[cfg(not_now)]
-    unsafe {
-        vgPlain_printf(
-            "hello from rs_shadow_triop %lld\n\0".as_ptr() as *const c_char,
-            op,
-        );
+pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_long) -> vg_long {
+    if (s1 + s2 + s3) != 0 {
+        unsafe {
+            vgPlain_printf(b"hello from rs_shadow_triop \0".as_ptr() as *const c_char);
+            ppIROp(op);
+            vgPlain_printf(
+                b"0x%llx s1: %d s2: %d s3: %d\n\0".as_ptr() as *const c_char,
+                op,
+                s1,
+                s2,
+                s3,
+            );
+        }
     }
     return 0;
 }
 
 #[no_mangle]
-pub extern "C" fn rs_shadow_binop(op: vg_long) -> vg_long {
-    #[cfg(not_now)]
-    unsafe {
-        vgPlain_printf(
-            "hello from rs_shadow_binop %lld\n\0".as_ptr() as *const c_char,
-            op,
-        );
+pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_long {
+    if (s1 + s2) != 0 {
+        unsafe {
+            vgPlain_printf("hello from rs_shadow_binop \0".as_ptr() as *const c_char);
+            ppIROp(op);
+            vgPlain_printf(
+                " (0x%llx) s1: %d s2: %d\n\0".as_ptr() as *const c_char,
+                op,
+                s1,
+                s2,
+            );
+        }
     }
     return 0;
 }
 
+extern "C" {
+    fn ppIROp(opcode: vg_long);
+}
+
 #[no_mangle]
-pub extern "C" fn rs_shadow_unop(op: vg_long) -> vg_long {
-    #[cfg(not_now)]
-    unsafe {
-        vgPlain_printf(
-            "hello from rs_shadow_unop %lld\n\0".as_ptr() as *const c_char,
-            op,
-        );
+pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
+    if s1 != 0 {
+        unsafe {
+            vgPlain_printf(b"hello from rs_shadow_unop \0".as_ptr() as *const c_char);
+            ppIROp(op);
+            vgPlain_printf(" (0x%llx) s1: %d\n\0".as_ptr() as *const c_char, op, s1);
+        }
+
+        if IROp::is_widening(op) {
+            // FIXME: why are we reading a byte here on our shadowed temp?
+            return s1;
+        }
     }
     return 0;
 }

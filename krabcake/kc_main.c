@@ -114,10 +114,10 @@ static void kc_post_clo_init(void)
 }
 
 extern Long rs_shadow_rdtmp ( Long tmp );
-extern Long rs_shadow_qop ( Long op );
-extern Long rs_shadow_triop ( Long op );
-extern Long rs_shadow_binop ( Long op );
-extern Long rs_shadow_unop ( Long op );
+extern Long rs_shadow_qop ( Long op, Long s1, Long s2, Long s3, Long s4 );
+extern Long rs_shadow_triop ( Long op, Long s1, Long s2, Long s3 );
+extern Long rs_shadow_binop ( Long op, Long s1, Long s2 );
+extern Long rs_shadow_unop ( Long op, Long s1 );
 extern Long rs_shadow_load ( Addr addr, Long s1 );
 extern Long rs_shadow_const ( );
 extern Long rs_shadow_ite ( Long cond, Long s1, Long s2, Long s3 );
@@ -332,7 +332,8 @@ static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
          0,
          "rs_shadow_qop",
          VG_(fnptr_to_fnentry)( &rs_shadow_qop ),
-         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.Qop.details->op))
+         mkIRExprVec_5(mkIRExpr_HWord(e->Iex.Qop.details->op),
+                       shadow1, shadow2, shadow3, shadow4)
          );
       break;
       /* A ternary operation.
@@ -348,7 +349,8 @@ static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
          0,
          "rs_shadow_triop",
          VG_(fnptr_to_fnentry)( &rs_shadow_triop ),
-         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.Triop.details->op))
+         mkIRExprVec_4(mkIRExpr_HWord(e->Iex.Triop.details->op),
+                       shadow1, shadow2, shadow3)
          );
       break;
       /* A binary operation.
@@ -362,7 +364,7 @@ static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
          0,
          "rs_shadow_binop",
          VG_(fnptr_to_fnentry)( &rs_shadow_binop ),
-         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.Binop.op))
+         mkIRExprVec_3(mkIRExpr_HWord(e->Iex.Binop.op), shadow1, shadow2)
          );
       break;
       /* A unary operation.
@@ -375,7 +377,7 @@ static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
          0,
          "rs_shadow_unop",
          VG_(fnptr_to_fnentry)( &rs_shadow_unop ),
-         mkIRExprVec_1(mkIRExpr_HWord(e->Iex.Unop.op))
+         mkIRExprVec_2(mkIRExpr_HWord(e->Iex.Unop.op), shadow1)
          );
       break;
       /* A load from memory -- a normal load, not a load-linked.
