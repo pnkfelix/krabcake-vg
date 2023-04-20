@@ -158,7 +158,7 @@ static mut STACKED_BORROW_EVENT: Option<SbEvent> = None;
 macro_rules! msg {
     ($x: literal) => { msg!($x,) };
     ($x: literal, $($arg: expr $(,)?),*) => {{
-	let x: &[u8] = $x;
+        let x: &[u8] = $x;
         assert!(x.last() == Some(&b'\0'));
         vgPlain_printf(x.as_ptr() as *const c_char, $($arg),*);
     }};
@@ -465,27 +465,6 @@ pub extern "C" fn rs_trace_store(
             },
         );
     }
-    unsafe {
-        if shadow_data != 0 {
-            msg!(
-                b"rs_trace_store propagating shadow data into *addr: 0x%08llx shadow_data: %d\n\0",
-                addr,
-                shadow_data,
-            );
-            TRACKED_ADDRS.push((addr, Tag(shadow_data as u64)));
-        }
-
-        if shadow_addr != 0 || shadow_data != 0 {
-            msg!(
-                b"rs_trace_store non-trivial shadow on addr: 0x%llx data: 0x%llx shadow_addr: %d shadow_data: %d \n\0",
-                addr,
-                data,
-                shadow_addr,
-                shadow_data,
-            );
-        }
-    }
-
     if_addr_tracked_then(addr as vg_addr, |tag| unsafe {
         msg!(
             b"rs_trace_store tracked addr 0x%08llx shadow_addr: %d shadow_data: %d has tag %d\n\0",
@@ -514,6 +493,28 @@ pub extern "C" fn rs_trace_store(
             stack.len(),
         );
     });
+
+    unsafe {
+        if shadow_addr != 0 || shadow_data != 0 {
+            msg!(
+                b"rs_trace_store non-trivial shadow on addr: 0x%llx data: %d (0x%08llx) shadow_addr: %d shadow_data: %d \n\0",
+                addr,
+                data,
+                data,
+                shadow_addr,
+                shadow_data,
+            );
+        }
+
+        if shadow_data != 0 {
+            msg!(
+                b"rs_trace_store propagating shadow data into *addr: 0x%08llx shadow_data: %d\n\0",
+                addr,
+                shadow_data,
+            );
+            TRACKED_ADDRS.push((addr, Tag(shadow_data as u64)));
+        }
+    }
 }
 
 #[no_mangle]
@@ -581,8 +582,9 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
     unsafe {
         if shadow_data != 0 {
             msg!(
-                b"rs_trace_put non-trivial shadow on data at offset: %lld data: 0x%llx shadow_data: %d \n\0",
+                b"rs_trace_put non-trivial shadow on data at offset: %lld data: %d (0x%08llx) shadow_data: %d \n\0",
                 put_offset,
+                data,
                 data,
                 shadow_data,
             );
@@ -596,7 +598,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
         msg!(
             b"rs_trace_put tracked data offset %lld data %d (0x%08llx) shadow_data: %d has tag %d\n\0",
             put_offset,
-	    data,
+            data,
             data,
             shadow_data,
             tag.0,
@@ -843,21 +845,6 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
         );
     }
     unsafe {
-        #[cfg(not_anymore)]
-        if let Some(event) = STACKED_BORROW_EVENT {
-            if event.1 == addr as vg_addr {
-                let ret = (event.2).0;
-                msg!(
-                    b"rs_shadow_load event addr: 0x%08llx s1: %d has event %s returning tag: %d\n\0",
-                    addr,
-                    s1,
-                    (event.0).c_str(),
-                    ret,
-                );
-                STACKED_BORROW_EVENT = None;
-                return ret as vg_long;
-            }
-        }
         if s1 != 0 {
             msg!(
                 b"rs_shadow_load non-trivial shadow for addr 0x%08llx s1: %d\n\0",
@@ -920,11 +907,20 @@ pub extern "C" fn rs_shadow_ite(cond: vg_long, s1: vg_long, s2: vg_long, s3: vg_
 
 #[no_mangle]
 pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
+    let mut ret = 0;
+
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_get sb event \0"),
             || msg!(b" offset: %d \n\0", offset),
         );
+    }
+
+    if let Some(tag) = if_greg_tracked_then(offset as vg_ulong, |tag| tag) {
+        unsafe {
+            msg!(b"hello from rs_shadow_get %lld tag: %d\n\0", offset, tag.0,);
+        }
+        ret = tag.0 as vg_long;
     }
 
     // FIXME BIG HACK
@@ -939,21 +935,14 @@ pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
     unsafe {
         if let Some(event) = STACKED_BORROW_EVENT {
             let addr = event.1;
-            let ret = (event.2).0;
+            ret = (event.2).0 as vg_long;
 
             msg!(b"hack attaching %d to reg offset: %d with expectation that it has value 0x%08llx\n\0", ret, offset, addr);
             STACKED_BORROW_EVENT = None;
-            return ret as vg_long;
         }
     }
 
-    if let Some(tag) = if_greg_tracked_then(offset as vg_ulong, |tag| tag) {
-        unsafe {
-            msg!(b"hello from rs_shadow_get %lld tag: %d\n\0", offset, tag.0,);
-        }
-        return tag.0 as vg_long;
-    }
-    return 0;
+    return ret;
 }
 
 #[no_mangle]
