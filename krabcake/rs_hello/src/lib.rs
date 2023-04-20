@@ -138,6 +138,8 @@ enum Item {
 // along with the address as it is copied from place to place.
 static mut TRACKED_ADDRS: Vec<(vg_addr, Tag)> = Vec::new();
 static mut TRACKED_TEMPS: Vec<(vg_uint, Tag)> = Vec::new();
+// "GREG" is "Guest Register", i.e. the emulated registers.
+static mut TRACKED_GREGS: Vec<(vg_ulong, Tag)> = Vec::new();
 
 static mut STACKS: Vec<(vg_addr, Vec<Item>)> = Vec::new();
 
@@ -177,6 +179,17 @@ impl SbEventKind {
             SbEventKind::RetagRaw => b"RetagRaw\0".as_ptr(),
         }) as *const c_char
     }
+}
+
+fn if_greg_tracked_then<T>(greg: vg_ulong, process_tag: impl FnOnce(Tag) -> T) -> Option<T> {
+    unsafe {
+        for entry in TRACKED_GREGS.iter().rev() {
+            if entry.0 == greg {
+                return Some(process_tag(entry.1));
+            }
+        }
+    }
+    None
 }
 
 fn if_temp_tracked_then<T>(temp: vg_uint, process_tag: impl FnOnce(Tag) -> T) -> Option<T> {
@@ -494,6 +507,9 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
                 data,
                 shadow_data,
             );
+            TRACKED_GREGS.push((put_offset, Tag(shadow_data as u64)));
+        } else {
+            TRACKED_GREGS.retain(|entry| entry.0 != put_offset);
         }
     }
 
