@@ -946,7 +946,14 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
                 stack.len(),
             );
         });
+
+        if s1 != 0 {
+            check_use_1(addr as vg_addr, s1 as u64);
+        }
     }
+
+    // FIXME: this is an absolute bug; we should check whether addr
+    // itself is tracked above and use its associated value if so.
     return 0;
 }
 
