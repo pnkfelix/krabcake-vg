@@ -411,6 +411,57 @@ type vg_long = c_longlong;
 #[allow(non_camel_case_types)]
 type vg_size_t = c_size_t;
 
+unsafe fn check_use_1(addr: vg_addr, shadow_addr: vg_ulong) {
+    assert!(shadow_addr != 0);
+
+    // Confim that this access is legal; i.e. that:
+    //
+    // 1. this memory location has an associated stack
+    //
+    // 2. the associated stack has a Unique(T) entry, where T
+    //    is the tag (i.e. the shadow value)
+    //
+    // 3. as a side-effect of the access, we must pop all entries that
+    //    lay above the aforementioned Unique(T).
+    let lookup = if_addr_has_stack_then(addr, |stack| {
+        let before_len = stack.len();
+        while let Some(last) = stack.last() {
+            msg!(
+                b"tag search seeking %d and saw %d\n\0",
+                shadow_addr,
+                last.num()
+            );
+            if last == &Item::Unique(Tag(shadow_addr)) {
+                let after_len = stack.len();
+                return (true, before_len, after_len);
+            } else {
+                stack.pop();
+            }
+        }
+        let after_len = stack.len();
+        (false, before_len, after_len)
+    });
+    match lookup {
+        None => {
+            alert!(b"ALERT no stack for address 0x%08llx even though we are accessing it via pointer with tag %d\n\0",
+			   addr,
+			   shadow_addr);
+        }
+        Some((false, _, _)) => {
+            alert!(b"ALERT could not find tag in stack for address 0x%08llx even though we are accesing it via pointer with tag %d\n\0",
+			   addr,
+			   shadow_addr);
+        }
+        Some((true, before_len, after_len)) => {
+            msg!(b"found tag in stack for address 0x%08llx when accessing via pointer with tag %d; stack len before: %d after: %d\n\0",
+			 addr,
+			 shadow_addr,
+			 before_len,
+			 after_len);
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn rs_trace_cas(addr: vg_addr) {
     unsafe {
@@ -527,53 +578,10 @@ pub extern "C" fn rs_trace_store(
         }
 
         if shadow_addr != 0 {
-            // A non-trivial shadow on the address means this was a *tagged*
-            // pointer. Thus, we need to confim that this access is legal;
-            // i.e. that:
-            //
-            // 1. this memory location has an associated stack
-            //
-            // 2. the associated stack has a Unique(T) entry, where T
-            //    is the tag (i.e. the shadow value)
-            //
-            // 3. as a side-effect of the access, we must pop all entries that
-            //    lay above the aforementioned Unique(T).
-            match if_addr_has_stack_then(addr, |stack| {
-                let before_len = stack.len();
-                while let Some(last) = stack.last() {
-                    msg!(
-                        b"tag search seeking %d and saw %d\n\0",
-                        shadow_addr,
-                        last.num()
-                    );
-                    if last == &Item::Unique(Tag(shadow_addr)) {
-                        let after_len = stack.len();
-                        return (true, before_len, after_len);
-                    } else {
-                        stack.pop();
-                    }
-                }
-                let after_len = stack.len();
-                (false, before_len, after_len)
-            }) {
-                None => {
-                    alert!(b"ALERT no stack for address 0x%08llx even though we are accessing it via pointer with tag %d\n\0",
-			   addr,
-			   shadow_addr);
-                }
-                Some((false, _, _)) => {
-                    alert!(b"ALERT could not find tag in stack for address 0x%08llx even though we are accesing it via pointer with tag %d\n\0",
-			   addr,
-			   shadow_addr);
-                }
-                Some((true, before_len, after_len)) => {
-                    msg!(b"found tag in stack for address 0x%08llx when accessing via pointer with tag %d; stack len before: %d after: %d\n\0",
-			 addr,
-			 shadow_addr,
-			 before_len,
-			 after_len);
-                }
-            }
+            // A non-trivial shadow on the address means this was a
+            // *tagged* pointer; need to confirm this access is legal
+            // (and update the stack to reflect a use via this tag).
+            check_use_1(addr, shadow_addr);
         }
 
         if shadow_data != 0 {
