@@ -707,19 +707,28 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
             if event.1 == addr as vg_addr {
                 let ret = (event.2).0;
                 vgPlain_printf(
-               b"rs_shadow_load event addr: %08llx s1: %08lld has event %s returning tag: %d\n\0".as_ptr() as *const c_char,
-               addr,
-               s1,
-               (event.0).c_str(),
-               ret,
-            );
+                    b"rs_shadow_load event addr: 0x%08llx s1: %d has event %s returning tag: %d\n\0"
+                        .as_ptr() as *const c_char,
+                    addr,
+                    s1,
+                    (event.0).c_str(),
+                    ret,
+                );
                 STACKED_BORROW_EVENT = None;
                 return ret as vg_long;
             }
         }
+        if s1 != 0 {
+            vgPlain_printf(
+                b"rs_shadow_load non-trivial shadow for addr 0x%08llx s1: %d\n\0".as_ptr()
+                    as *const c_char,
+                addr,
+                s1,
+            );
+        }
         if_addr_tracked_then(addr as vg_addr, |tag| unsafe {
             vgPlain_printf(
-                b"rs_shadow_load tracked addr %08llx s1: %08lld has tag %d\n\0".as_ptr()
+                b"rs_shadow_load tracked addr 0x%08llx s1: %d has tag %d\n\0".as_ptr()
                     as *const c_char,
                 addr,
                 s1,
