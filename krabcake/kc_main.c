@@ -129,7 +129,6 @@ extern void rs_trace_cas ( Addr addr );
 extern void rs_trace_storeg ( Long guard, Addr addr, SizeT size );
 extern void rs_trace_loadg ( Long guard, Addr addr, SizeT size, SizeT widened_size );
 extern void rs_trace_wrtmp ( IRTemp lhs_tmp, ULong shadow_data );
-extern void rs_trace_wrtmp_load ( IRTemp lhs_tmp, Addr addr, SizeT size );
 extern void rs_trace_store ( Addr addr, ULong data, SizeT size, ULong shadow_addr, ULong shadow_data );
 extern void rs_trace_store128 ( Addr addr, ULong data1, ULong data2, SizeT size, ULong shadow_addr, ULong shadow_data );
 extern void rs_trace_store256 ( Addr addr, ULong data1, ULong data2, ULong data3, ULong data4, SizeT size, ULong shadow_addr, ULong shadow_data );
@@ -297,7 +296,9 @@ static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
    IRExpr* (*recur)(IRSB *sbOut, IRExpr* e, ExprContext exc);
    recur = kc_construct_shadow_eval;
 
-   // VG_(printf)("kc_construct_shadow_eval "); ppIRExpr(e); VG_(printf)("\n");
+   if (0 && ec == Expr_Load_Addr) {
+      VG_(printf)("kc_construct_shadow_eval "); ppIRExpr(e); VG_(printf)("\n");
+   }
    
    IRDirty* di;
    IRTemp recvTmp = newTagTemp( sbOut );
@@ -922,6 +923,13 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
    for (i = 0; i < sbIn->stmts_used; i++) {
       IRStmt* st = sbIn->stmts[i];
       if (!st) continue;
+
+      /*
+      VG_(printf)("stmt[%d]: ", i);
+      ppIRStmt(st);
+      VG_(printf)("\n");
+      */
+
       switch (st->tag) {
          // == LOAD+STORE instructions ==
 
