@@ -169,7 +169,7 @@ macro_rules! msg {
     ($x: literal, $($arg: expr $(,)?),*) => {{
         let x: &[u8] = $x;
         assert!(x.last() == Some(&b'\0'));
-        vgPlain_printf(x.as_ptr() as *const c_char, $($arg),*);
+        if false { vgPlain_printf(x.as_ptr() as *const c_char, $($arg),*); }
     }};
 }
 
