@@ -1,3 +1,5 @@
+#![allow(non_camel_case_types)]
+
 #[repr(i64)]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IROp {
