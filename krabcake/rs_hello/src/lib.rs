@@ -690,6 +690,12 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
             // FIXME: why are we reading a byte here on our shadowed temp?
             return s1;
         }
+        if IROp::is_narrowing(op) {
+            // FIXME: is this a good idea either? At this point am
+            // just grasping at straws to see shadow state flow from
+            // one end to the other.
+            return s1;
+        }
     }
     return 0;
 }
