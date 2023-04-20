@@ -165,8 +165,8 @@ macro_rules! msg {
 }
 
 unsafe fn print_stacked_borrow_event(event: SbEvent) {
-    vgPlain_printf(
-        b"SbEvent(kind: %s, addr: 0x%08llx, tag: %d)\0".as_ptr() as *const c_char,
+    msg!(
+        b"SbEvent(kind: %s, addr: 0x%08llx, tag: %d)\0",
         (event.0).c_str(),
         event.1,
         (event.2).0,
@@ -399,13 +399,6 @@ pub extern "C" fn rs_trace_cas(addr: vg_addr) {
             || msg!(b" addr: 0x%08llx \n\0", addr),
         );
     }
-    unsafe {
-        if false {
-            let mut buf = alloc::string::String::new();
-            buf += "rs_trace_cas addr=%08llx";
-            vgPlain_printf((buf + "\n\0").as_ptr() as *const c_char, addr);
-        }
-    }
 }
 #[no_mangle]
 pub extern "C" fn rs_trace_storeg(guard: vg_long, addr: vg_addr, size: vg_size_t) {
@@ -441,11 +434,7 @@ pub extern "C" fn rs_trace_wrtmp(lhs_tmp: vg_uint, s1: vg_long) {
     }
     unsafe {
         if s1 != 0 {
-            vgPlain_printf(
-                b"rs_trace_wrtmp lhs_tmp: %u s1: %d\n\0".as_ptr() as *const c_char,
-                lhs_tmp,
-                s1,
-            );
+            msg!(b"rs_trace_wrtmp lhs_tmp: %u s1: %d\n\0", lhs_tmp, s1,);
             TRACKED_TEMPS.push((lhs_tmp, Tag(s1 as u64)));
         } else {
             TRACKED_TEMPS.retain(|entry| entry.0 != lhs_tmp);
@@ -487,9 +476,8 @@ pub extern "C" fn rs_trace_store(
         }
 
         if shadow_addr != 0 || shadow_data != 0 {
-            vgPlain_printf(
-                b"rs_trace_store non-trivial shadow on addr: 0x%llx data: 0x%llx shadow_addr: %d shadow_data: %d \n\0"
-                    .as_ptr() as *const c_char,
+            msg!(
+                b"rs_trace_store non-trivial shadow on addr: 0x%llx data: 0x%llx shadow_addr: %d shadow_data: %d \n\0",
                 addr,
                 data,
                 shadow_addr,
@@ -499,9 +487,8 @@ pub extern "C" fn rs_trace_store(
     }
 
     if_addr_tracked_then(addr as vg_addr, |tag| unsafe {
-        vgPlain_printf(
-            b"rs_trace_store tracked addr 0x%08llx shadow_addr: %d shadow_data: %d has tag %d\n\0"
-                .as_ptr() as *const c_char,
+        msg!(
+            b"rs_trace_store tracked addr 0x%08llx shadow_addr: %d shadow_data: %d has tag %d\n\0",
             addr,
             shadow_addr,
             shadow_data,
@@ -510,9 +497,8 @@ pub extern "C" fn rs_trace_store(
     });
 
     if_addr_tracked_then(data as vg_addr, |tag| unsafe {
-        vgPlain_printf(
-            b"rs_trace_store tracked data %d (0x%08llx) shadow_addr: %d shadow_data: %d has tag %d\n\0"
-                .as_ptr() as *const c_char,
+        msg!(
+            b"rs_trace_store tracked data %d (0x%08llx) shadow_addr: %d shadow_data: %d has tag %d\n\0",
             data,
             data,
             shadow_addr,
@@ -522,9 +508,8 @@ pub extern "C" fn rs_trace_store(
     });
 
     if_addr_has_stack_then(addr, |stack| unsafe {
-        vgPlain_printf(
-            b"rs_trace_store has stack on addr 0x%08llx has stack len: %d\n\0".as_ptr()
-                as *const c_char,
+        msg!(
+            b"rs_trace_store has stack on addr 0x%08llx has stack len: %d\n\0",
             addr,
             stack.len(),
         );
@@ -595,9 +580,8 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
     }
     unsafe {
         if shadow_data != 0 {
-            vgPlain_printf(
-                b"rs_trace_put non-trivial shadow on data at offset: %lld data: 0x%llx shadow_data: %d \n\0".as_ptr()
-                    as *const c_char,
+            msg!(
+                b"rs_trace_put non-trivial shadow on data at offset: %lld data: 0x%llx shadow_data: %d \n\0",
                 put_offset,
                 data,
                 shadow_data,
@@ -609,9 +593,8 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
     }
 
     if_addr_tracked_then(data as vg_addr, |tag| unsafe {
-        vgPlain_printf(
-            b"rs_trace_put tracked data offset %lld data %d (0x%08llx) shadow_data: %d has tag %d\n\0"
-                .as_ptr() as *const c_char,
+        msg!(
+            b"rs_trace_put tracked data offset %lld data %d (0x%08llx) shadow_data: %d has tag %d\n\0",
             put_offset,
 	    data,
             data,
@@ -621,9 +604,8 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
     });
 
     if_addr_has_stack_then(data as vg_addr, |entries| unsafe {
-        vgPlain_printf(
-            "rs_trace_put has stack on data offset %lld data %d (0x%08llx)\n\0".as_ptr()
-                as *const c_char,
+        msg!(
+            b"rs_trace_put has stack on data offset %lld data %d (0x%08llx)\n\0",
             put_offset,
             data,
             data,
@@ -647,9 +629,8 @@ pub extern "C" fn rs_trace_put_just_shadow(put_offset: vg_ulong, shadow_data: vg
     }
     unsafe {
         if shadow_data != 0 {
-            vgPlain_printf(
-                b"rs_trace_put_just_shadow offset: %lld shadow_data: %d \n\0".as_ptr()
-                    as *const c_char,
+            msg!(
+                b"rs_trace_put_just_shadow offset: %lld shadow_data: %d \n\0",
                 put_offset,
                 shadow_data,
             );
@@ -673,8 +654,8 @@ pub extern "C" fn rs_trace_puti(
     }
     unsafe {
         if shadow_ix != 0 || shadow_data != 0 {
-            vgPlain_printf(
-                b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0".as_ptr() as *const c_char,
+            msg!(
+                b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0",
                 shadow_ix,
                 shadow_data,
             );
@@ -682,9 +663,8 @@ pub extern "C" fn rs_trace_puti(
     }
 
     if_addr_tracked_then(data as vg_addr, |tag| unsafe {
-        vgPlain_printf(
-            b"rs_trace_puti data %d (0x%08llx) shadow_data: %d has tag %d\n\0".as_ptr()
-                as *const c_char,
+        msg!(
+            b"rs_trace_puti data %d (0x%08llx) shadow_data: %d has tag %d\n\0",
             data,
             data,
             shadow_data,
@@ -693,11 +673,7 @@ pub extern "C" fn rs_trace_puti(
     });
 
     if_addr_has_stack_then(data as vg_addr, |entries| unsafe {
-        vgPlain_printf(
-            "rs_trace_puti data %d (0x%08llx)\n\0".as_ptr() as *const c_char,
-            data,
-            data,
-        );
+        msg!(b"rs_trace_puti data %d (0x%08llx)\n\0", data, data,);
     });
 }
 
@@ -716,8 +692,8 @@ pub extern "C" fn rs_trace_puti_just_shadow(
     }
     unsafe {
         if shadow_ix != 0 || shadow_data != 0 {
-            vgPlain_printf(
-                b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0".as_ptr() as *const c_char,
+            msg!(
+                b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0",
                 shadow_ix,
                 shadow_data,
             );
@@ -735,8 +711,8 @@ pub extern "C" fn rs_shadow_rdtmp(tmp: vg_long) -> vg_long {
     }
     unsafe {
         if let Some(tag) = if_temp_tracked_then(tmp as vg_uint, |tag| tag) {
-            vgPlain_printf(
-                b"rs_shadow_rdtmp tracked tmp: %d has tag: %d\n\0".as_ptr() as *const c_char,
+            msg!(
+                b"rs_shadow_rdtmp tracked tmp: %d has tag: %d\n\0",
                 tmp,
                 tag.0,
             );
@@ -767,8 +743,8 @@ pub extern "C" fn rs_shadow_qop(
         unsafe {
             msg!(b"hello from rs_shadow_qop \0");
             ppIROp(op);
-            vgPlain_printf(
-                " (0x%llx) s1: %d s2: %d s3: %d s4: %d\n\0".as_ptr() as *const c_char,
+            msg!(
+                b" (0x%llx) s1: %d s2: %d s3: %d s4: %d\n\0",
                 op,
                 s1,
                 s2,
@@ -795,13 +771,7 @@ pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_
         unsafe {
             msg!(b"hello from rs_shadow_triop \0");
             ppIROp(op);
-            vgPlain_printf(
-                b"0x%llx s1: %d s2: %d s3: %d\n\0".as_ptr() as *const c_char,
-                op,
-                s1,
-                s2,
-                s3,
-            );
+            msg!(b"0x%llx s1: %d s2: %d s3: %d\n\0", op, s1, s2, s3,);
         }
     }
     return 0;
@@ -822,12 +792,7 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
         unsafe {
             msg!(b"hello from rs_shadow_binop \0");
             ppIROp(op);
-            vgPlain_printf(
-                " (0x%llx) s1: %d s2: %d\n\0".as_ptr() as *const c_char,
-                op,
-                s1,
-                s2,
-            );
+            msg!(b" (0x%llx) s1: %d s2: %d\n\0", op, s1, s2,);
         }
     }
     return 0;
@@ -852,7 +817,7 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
         unsafe {
             msg!(b"hello from rs_shadow_unop \0");
             ppIROp(op);
-            vgPlain_printf(" (0x%llx) s1: %d\n\0".as_ptr() as *const c_char, op, s1);
+            msg!(b" (0x%llx) s1: %d\n\0", op, s1);
         }
 
         if IROp::is_widening(op) {
@@ -882,9 +847,8 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
         if let Some(event) = STACKED_BORROW_EVENT {
             if event.1 == addr as vg_addr {
                 let ret = (event.2).0;
-                vgPlain_printf(
-                    b"rs_shadow_load event addr: 0x%08llx s1: %d has event %s returning tag: %d\n\0"
-                        .as_ptr() as *const c_char,
+                msg!(
+                    b"rs_shadow_load event addr: 0x%08llx s1: %d has event %s returning tag: %d\n\0",
                     addr,
                     s1,
                     (event.0).c_str(),
@@ -895,26 +859,23 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
             }
         }
         if s1 != 0 {
-            vgPlain_printf(
-                b"rs_shadow_load non-trivial shadow for addr 0x%08llx s1: %d\n\0".as_ptr()
-                    as *const c_char,
+            msg!(
+                b"rs_shadow_load non-trivial shadow for addr 0x%08llx s1: %d\n\0",
                 addr,
                 s1,
             );
         }
         if_addr_tracked_then(addr as vg_addr, |tag| unsafe {
-            vgPlain_printf(
-                b"rs_shadow_load tracked addr 0x%08llx s1: %d has tag %d\n\0".as_ptr()
-                    as *const c_char,
+            msg!(
+                b"rs_shadow_load tracked addr 0x%08llx s1: %d has tag %d\n\0",
                 addr,
                 s1,
                 tag.0,
             );
         });
         if_addr_has_stack_then(addr as vg_addr, |stack| unsafe {
-            vgPlain_printf(
-                b"rs_shadow_load addr 0x%08llx s1: %d has stack len: %d\n\0".as_ptr()
-                    as *const c_char,
+            msg!(
+                b"rs_shadow_load addr 0x%08llx s1: %d has stack len: %d\n\0",
                 addr,
                 s1,
                 stack.len(),
@@ -931,7 +892,7 @@ pub extern "C" fn rs_shadow_const() -> vg_long {
     }
     #[cfg(not_now)]
     unsafe {
-        msg!("hello from rs_shadow_const\n\0");
+        msg!(b"hello from rs_shadow_const\n\0");
     }
     return 0;
 }
@@ -944,9 +905,8 @@ pub extern "C" fn rs_shadow_ite(cond: vg_long, s1: vg_long, s2: vg_long, s3: vg_
     let ret = if cond != 0 { s2 } else { s3 };
     unsafe {
         if ret != 0 {
-            vgPlain_printf(
-                "hello from rs_shadow_ite %lld s1: %d s2: %d s3: %d ret: %d\n\0".as_ptr()
-                    as *const c_char,
+            msg!(
+                b"hello from rs_shadow_ite %lld s1: %d s2: %d s3: %d ret: %d\n\0",
                 cond,
                 s1,
                 s2,
@@ -989,11 +949,7 @@ pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
 
     if let Some(tag) = if_greg_tracked_then(offset as vg_ulong, |tag| tag) {
         unsafe {
-            vgPlain_printf(
-                "hello from rs_shadow_get %lld tag: %d\n\0".as_ptr() as *const c_char,
-                offset,
-                tag.0,
-            );
+            msg!(b"hello from rs_shadow_get %lld tag: %d\n\0", offset, tag.0,);
         }
         return tag.0 as vg_long;
     }
@@ -1007,7 +963,7 @@ pub extern "C" fn rs_shadow_geti() -> vg_long {
     }
     #[cfg(not_now)]
     unsafe {
-        msg!("hello from rs_shadow_geti\n\0");
+        msg!(b"hello from rs_shadow_geti\n\0");
     }
     return 0;
 }
@@ -1019,7 +975,7 @@ pub extern "C" fn rs_shadow_ccall() -> vg_long {
     }
     #[cfg(not_now)]
     unsafe {
-        msg!("hello from rs_shadow_ccall\n\0");
+        msg!(b"hello from rs_shadow_ccall\n\0");
     }
     return 0;
 }
