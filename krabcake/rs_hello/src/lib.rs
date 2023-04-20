@@ -117,7 +117,7 @@ fn rust_eh_personality() {
 // "if you cannot beat 'em, join 'em."
 mod libc_stuff;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 struct Tag(u64);
 
 impl Tag {
@@ -128,8 +128,17 @@ impl Tag {
 
 static mut COUNTER: Tag = Tag(0);
 
+#[derive(Copy, Clone, PartialEq, Eq)]
 enum Item {
     Unique(Tag),
+}
+
+impl Item {
+    fn num(&self) -> u64 {
+        match *self {
+            Item::Unique(Tag(val)) => val,
+        }
+    }
 }
 
 // FIXME: Need to more clearly distinguish between addresses and
@@ -156,6 +165,17 @@ type SbEvent = (SbEventKind, vg_addr, Tag);
 static mut STACKED_BORROW_EVENT: Option<SbEvent> = None;
 
 macro_rules! msg {
+    ($x: literal) => { msg!($x,) };
+    ($x: literal, $($arg: expr $(,)?),*) => {{
+        let x: &[u8] = $x;
+        assert!(x.last() == Some(&b'\0'));
+        vgPlain_printf(x.as_ptr() as *const c_char, $($arg),*);
+    }};
+}
+
+// This is the same as msg for now; I just wanted an easy way
+// to disable the msg's in the future while keeping the alerts.
+macro_rules! alert {
     ($x: literal) => { msg!($x,) };
     ($x: literal, $($arg: expr $(,)?),*) => {{
         let x: &[u8] = $x;
@@ -271,11 +291,11 @@ pub extern "C" fn rs_client_request_borrow_mut(
         COUNTER = COUNTER.next();
         let addr = *arg.offset(1) as vg_addr;
         let lookup = if_addr_has_stack_then(addr, |entries| {
-            entries.push(Item::Unique(Tag(addr as u64)));
+            entries.push(Item::Unique(COUNTER));
         });
         if lookup.is_none() {
             let mut v = Vec::new();
-            v.push(Item::Unique(Tag(addr as u64)));
+            v.push(Item::Unique(COUNTER));
             STACKS.push((addr, v));
         }
         assert!(STACKED_BORROW_EVENT.is_none());
@@ -504,6 +524,56 @@ pub extern "C" fn rs_trace_store(
                 shadow_addr,
                 shadow_data,
             );
+        }
+
+        if shadow_addr != 0 {
+            // A non-trivial shadow on the address means this was a *tagged*
+            // pointer. Thus, we need to confim that this access is legal;
+            // i.e. that:
+            //
+            // 1. this memory location has an associated stack
+            //
+            // 2. the associated stack has a Unique(T) entry, where T
+            //    is the tag (i.e. the shadow value)
+            //
+            // 3. as a side-effect of the access, we must pop all entries that
+            //    lay above the aforementioned Unique(T).
+            match if_addr_has_stack_then(addr, |stack| {
+                let before_len = stack.len();
+                while let Some(last) = stack.last() {
+                    msg!(
+                        b"tag search seeking %d and saw %d\n\0",
+                        shadow_addr,
+                        last.num()
+                    );
+                    if last == &Item::Unique(Tag(shadow_addr)) {
+                        let after_len = stack.len();
+                        return (true, before_len, after_len);
+                    } else {
+                        stack.pop();
+                    }
+                }
+                let after_len = stack.len();
+                (false, before_len, after_len)
+            }) {
+                None => {
+                    alert!(b"ALERT no stack for address 0x%08llx even though we are accessing it via pointer with tag %d\n\0",
+			   addr,
+			   shadow_addr);
+                }
+                Some((false, _, _)) => {
+                    alert!(b"ALERT could not find tag in stack for address 0x%08llx even though we are accesing it via pointer with tag %d\n\0",
+			   addr,
+			   shadow_addr);
+                }
+                Some((true, before_len, after_len)) => {
+                    msg!(b"found tag in stack for address 0x%08llx when accessing via pointer with tag %d; stack len before: %d after: %d\n\0",
+			 addr,
+			 shadow_addr,
+			 before_len,
+			 after_len);
+                }
+            }
         }
 
         if shadow_data != 0 {
