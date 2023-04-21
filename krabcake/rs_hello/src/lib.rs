@@ -69,19 +69,13 @@ pub extern "C" fn hello_world(
     let msg: &[u8] = b"Hello world (from `rs_hello/src/lib.rs`)!\n\0";
     unsafe { vgPlain_printf(msg.as_ptr() as *const c_char, msg.len()) };
 
+    // A Vec sanity check, because if the allocator stops working then
+    // there's little point in trying to do so much of this in Rust.
     let mut v = Vec::new();
     v.push(0);
     v.push(1);
     v.push(2);
-    unsafe {
-        vgPlain_printf("v.len: %u\n\0".as_ptr() as *const c_char, v.len() as c_int);
-        let end = v.pop().unwrap();
-        vgPlain_printf(
-            "end: %u, v.len: %u\n\0".as_ptr() as *const c_char,
-            end as c_int,
-            v.len() as c_int,
-        );
-    };
+    let end = v.pop().unwrap();
 }
 
 #[no_mangle]
