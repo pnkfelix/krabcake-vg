@@ -58,6 +58,7 @@ extern "C" {
     fn vgPlain_printf(format: *const c_char, ...) -> u32;
 
     fn vgPlain_dmsg(format: *const c_char, ...) -> u32;
+    fn vgPlain_umsg(format: *const c_char, ...) -> u32;
 }
 
 #[no_mangle]
@@ -174,7 +175,7 @@ macro_rules! alert {
     ($x: literal, $($arg: expr $(,)?),*) => {{
         let x: &[u8] = $x;
         assert!(x.last() == Some(&b'\0'));
-        vgPlain_printf(x.as_ptr() as *const c_char, $($arg),*);
+        vgPlain_umsg(x.as_ptr() as *const c_char, $($arg),*);
     }};
 }
 
@@ -277,8 +278,7 @@ pub extern "C" fn rs_client_request_borrow_mut(
 ) -> bool {
     unsafe {
         vgPlain_dmsg(
-            "kc_handle_client_request, handle BORROW_MUT 0x%llx (<- return value) into ret: 0x%08llx\n\0"
-                .as_ptr() as *const c_char,
+            "lib.rs: handle client request BORROW_MUT 0x%llx\n\0".as_ptr() as *const c_char,
             *arg.offset(1),
             ret,
         );
