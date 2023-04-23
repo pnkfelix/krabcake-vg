@@ -1048,7 +1048,7 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
    if (!VG_IS_TOOL_USERREQ('K','C',arg[0]))
       return False;
 
-   VG_(dmsg)("kc_handle_client_request, dispatching client request code %llx\n", (ULong)arg[0]);
+   VG_(dmsg)("kc_main.c: dispatching code %llx\n", (ULong)arg[0]);
 
    switch(arg[0]) {
    case VG_USERREQ__BORROW_MUT: {
