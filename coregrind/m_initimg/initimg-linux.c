@@ -914,7 +914,17 @@ Addr setup_client_stack( void*  init_sp,
             /* Trash this, because we don't reproduce it */
             const NSegment* ehdrseg = VG_(am_find_nsegment)((Addr)auxv->u.a_ptr);
             vg_assert(ehdrseg);
+
+            // The munmap below ends up unmapping librrpreload.so
+            // when running atop `rr`. Until/unless `rr` addresses this issue, we
+            // will just skip doing all such munmaps.
+            //
+            // See also: https://github.com/rr-debugger/rr/issues/3509
+            //
+#           if 0
             VG_(am_munmap_valgrind)(ehdrseg->start, ehdrseg->end - ehdrseg->start);
+#           endif
+
             auxv->a_type = AT_IGNORE;
             break;
          }
