@@ -1164,6 +1164,13 @@ static void handle_SCSS_change ( Bool force_update )
 #        endif
          VG_(sigaddset)( &ksa_old.sa_mask, VKI_SIGKILL );
          VG_(sigaddset)( &ksa_old.sa_mask, VKI_SIGSTOP );
+
+         // pnkfelix: `rr` uses SIGSTKFLT and SIGPWR, so do not include those in
+         // our assertion about a full sigset in sa_mask. See also:
+         // https://github.com/rr-debugger/rr/issues/3509
+         VG_(sigaddset)( &ksa_old.sa_mask, VKI_SIGSTKFLT );
+         VG_(sigaddset)( &ksa_old.sa_mask, VKI_SIGPWR );
+
          vg_assert(VG_(isfullsigset)( &ksa_old.sa_mask ));
       }
    }
