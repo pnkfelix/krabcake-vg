@@ -3,7 +3,8 @@ include $(top_srcdir)/Makefile.tool.am
 EXTRA_DIST = docs/kc-manual.xml
 
 RSHELLO_DIR = rs_hello
-RSHELLO_TARGET = $(RSHELLO_DIR)/target/release
+# RSHELLO_TARGET = $(RSHELLO_DIR)/target/release
+RSHELLO_TARGET = $(RSHELLO_DIR)/target/debug
 
 #$(RSHELLO_TARGET)/librs_hello.a:
 #	cd $(srcdir)/$(RSHELLO_DIR); \
@@ -16,12 +17,12 @@ RSHELLO_TARGET = $(RSHELLO_DIR)/target/release
 $(RSHELLO_TARGET)/librs_hello.amd64.a: $(RSHELLO_DIR)/src/lib.rs $(RSHELLO_DIR)/src/*.rs
 	mkdir -p $(RSHELLO_TARGET)
 	rustup target add x86_64-unknown-linux-gnu
-	rustc --edition=2021 --target=x86_64-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
+	rustc -g --edition=2021 --target=x86_64-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
 
 $(RSHELLO_TARGET)/librs_hello.x86.a: $(RSHELLO_DIR)/src/lib.rs $(RSHELLO_DIR)/src/*.rs
 	mkdir -p $(RSHELLO_TARGET)
 	rustup target add i586-unknown-linux-gnu
-	rustc --edition=2021 --target=i586-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
+	rustc -g --edition=2021 --target=i586-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
 
 clean-local:
 	cd $(srcdir)/$(RSHELLO_DIR); cargo clean
