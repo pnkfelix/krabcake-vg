@@ -156,15 +156,21 @@ static mut STACKS: Vec<(vg_addr, Vec<Item>)> = Vec::new();
 // the relevant event if it sees the corresponding memory
 // location.
 
-type SbEvent = (SbEventKind, vg_addr, Tag);
+#[derive(Copy, Clone)]
+struct SbEvent { kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag }
+fn SbEvent(kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag) -> SbEvent {
+    SbEvent { kind, stash, borrow, tag}
+}
 static mut STACKED_BORROW_EVENT: Option<SbEvent> = None;
+
+const PRINT_MSG: bool = false;
 
 macro_rules! msg {
     ($x: literal) => { msg!($x,) };
     ($x: literal, $($arg: expr $(,)?),*) => {{
         let x: &[u8] = $x;
         assert!(x.last() == Some(&b'\0'));
-        if false { vgPlain_printf(x.as_ptr() as *const c_char, $($arg),*); }
+        if PRINT_MSG { vgPlain_printf(x.as_ptr() as *const c_char, $($arg),*); }
     }};
 }
 
@@ -181,10 +187,11 @@ macro_rules! alert {
 
 unsafe fn print_stacked_borrow_event(event: SbEvent) {
     msg!(
-        b"SbEvent(kind: %s, addr: 0x%08llx, tag: %d)\0",
-        (event.0).c_str(),
-        event.1,
-        (event.2).0,
+        b"SbEvent(kind: %s, stash: 0x%08llx, borrow: 0x%08llx, tag: %d)\0",
+        (event.kind).c_str(),
+        event.stash,
+        event.borrow,
+        (event.tag).0,
     );
 }
 
@@ -270,10 +277,12 @@ fn if_addr_has_stack_then<T>(
     None
 }
 
+// The (new) protocol is: the borrowing address is stored
+// *in* the memory location at *arg[0].
 #[no_mangle]
 pub extern "C" fn rs_client_request_borrow_mut(
     thread_id: c_uint,
-    arg: *const c_size_t,
+    arg: *const *const c_size_t,
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
@@ -283,19 +292,20 @@ pub extern "C" fn rs_client_request_borrow_mut(
             ret,
         );
         COUNTER = COUNTER.next();
-        let addr = *arg.offset(1) as vg_addr;
-        let lookup = if_addr_has_stack_then(addr, |entries| {
+        let stash_addr = *arg.offset(1);
+        let borrowing_addr = *stash_addr as vg_addr;
+        let stash_addr = stash_addr as vg_addr;
+        let lookup = if_addr_has_stack_then(borrowing_addr, |entries| {
             entries.push(Item::Unique(COUNTER));
         });
         if lookup.is_none() {
             let mut v = Vec::new();
             v.push(Item::Unique(COUNTER));
-            STACKS.push((addr, v));
+            STACKS.push((borrowing_addr, v));
         }
+        TRACKED_ADDRS.push((stash_addr, COUNTER));
         assert!(STACKED_BORROW_EVENT.is_none());
-        STACKED_BORROW_EVENT = Some((SbEventKind::BorrowMut, addr, COUNTER));
-
-        *ret = *arg.offset(1);
+        STACKED_BORROW_EVENT = Some(SbEvent(SbEventKind::BorrowMut, stash_addr, borrowing_addr, COUNTER));
     }
     true
 }
@@ -585,6 +595,8 @@ pub extern "C" fn rs_trace_store(
                 shadow_data,
             );
             TRACKED_ADDRS.push((addr, Tag(shadow_data as u64)));
+        } else {
+            TRACKED_ADDRS.retain(|a| a.0 != addr);
         }
     }
 }
@@ -808,7 +820,7 @@ pub extern "C" fn rs_shadow_qop(
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_qop sb event \0"),
             || {
-                ppIROp(op);
+                if PRINT_MSG { ppIROp(op); }
                 msg!(b" \n\0");
             },
         );
@@ -816,7 +828,7 @@ pub extern "C" fn rs_shadow_qop(
     if (s1 + s2 + s3 + s4) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_qop \0");
-            ppIROp(op);
+            if PRINT_MSG { ppIROp(op); }
             msg!(
                 b" (0x%llx) s1: %d s2: %d s3: %d s4: %d\n\0",
                 op,
@@ -836,7 +848,7 @@ pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_triop sb event \0"),
             || {
-                ppIROp(op);
+                if PRINT_MSG { ppIROp(op); }
                 msg!(b" \n\0");
             },
         );
@@ -844,7 +856,7 @@ pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_
     if (s1 + s2 + s3) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_triop \0");
-            ppIROp(op);
+            if PRINT_MSG { ppIROp(op); }
             msg!(b"0x%llx s1: %d s2: %d s3: %d\n\0", op, s1, s2, s3,);
         }
     }
@@ -857,7 +869,7 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_binop sb event \0"),
             || {
-                ppIROp(op);
+                if PRINT_MSG { ppIROp(op); }
                 msg!(b" \n\0");
             },
         );
@@ -865,7 +877,7 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
     if (s1 + s2) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_binop \0");
-            ppIROp(op);
+            if PRINT_MSG { ppIROp(op); }
             msg!(b" (0x%llx) s1: %d s2: %d\n\0", op, s1, s2,);
         }
     }
@@ -882,7 +894,7 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_unop sb event \0"),
             || {
-                ppIROp(op);
+                if PRINT_MSG { ppIROp(op); }
                 msg!(b" \n\0");
             },
         );
@@ -890,7 +902,7 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
     if s1 != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_unop \0");
-            ppIROp(op);
+            if PRINT_MSG { ppIROp(op); }
             msg!(b" (0x%llx) s1: %d\n\0", op, s1);
         }
 
@@ -910,6 +922,8 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
 
 #[no_mangle]
 pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
+    let memory_shadow_value_core;
+    let memory_shadow_value_hack;
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_load sb event \0"),
@@ -941,14 +955,39 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
             );
         });
 
+        if let Some(event) = STACKED_BORROW_EVENT {
+            if event.stash == addr as vg_addr {
+                let s0 = event.tag.0;
+                msg!(b"rs_shadow_load 0x%08llx setting hack value for stashed tag %d\n\0", addr, s0);
+                STACKED_BORROW_EVENT = None;
+                memory_shadow_value_hack = s0 as vg_long;
+            } else {
+                memory_shadow_value_hack = 0;
+            }
+        } else {
+            memory_shadow_value_hack = 0;
+        }
+
         if s1 != 0 {
             check_use_1(addr as vg_addr, s1 as u64);
         }
     }
 
-    // FIXME: this is an absolute bug; we should check whether addr
-    // itself is tracked above and use its associated value if so.
-    return 0;
+    memory_shadow_value_core = if_addr_tracked_then(addr as vg_addr, |tag| tag.0 as vg_long).unwrap_or(0);
+
+    // When we remove the STACKED_BORROW_EVENT hack, all of this will be
+    // replaced with just returning memory_shadow_value_core
+    if (memory_shadow_value_core != 0) || (memory_shadow_value_hack != 0) {
+        unsafe {
+            msg!(b"rs_shadow_load 0x%08llx shadow core: %d hack: %d\n\0",
+                 addr,
+                 memory_shadow_value_core,
+                 memory_shadow_value_hack);
+        }
+    }
+    // assert_eq!(memory_shadow_value_core, memory_shadow_value_hack);
+
+    return memory_shadow_value_core;
 }
 
 #[no_mangle]
@@ -1001,26 +1040,6 @@ pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
         }
         ret = tag.0 as vg_long;
     }
-
-    // FIXME BIG HACK
-    // to get *something* plausible working, we are going to make a guess
-    // that the first currently observable statement after a client request
-    // return is always `tN = GET:i64(OFFSET)`.
-    //
-    // Therefore, we can emulate the end-desired code rewrite by
-    // intercepting every rs_shadow, and if the sb_event is enqueued, we
-    // immediately add the corresponding shadow state to that register
-    // (by returning it here).
-    unsafe {
-        if let Some(event) = STACKED_BORROW_EVENT {
-            let addr = event.1;
-            ret = (event.2).0 as vg_long;
-
-            msg!(b"hack attaching %d to reg offset: %d with expectation that it has value 0x%08llx\n\0", ret, offset, addr);
-            STACKED_BORROW_EVENT = None;
-        }
-    }
-
     return ret;
 }
 
