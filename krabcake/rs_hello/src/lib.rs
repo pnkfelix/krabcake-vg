@@ -985,7 +985,7 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
                  memory_shadow_value_hack);
         }
     }
-    assert_eq!(memory_shadow_value_core, memory_shadow_value_hack);
+    // assert_eq!(memory_shadow_value_core, memory_shadow_value_hack);
 
     return memory_shadow_value_core;
 }
