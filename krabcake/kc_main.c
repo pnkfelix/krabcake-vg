@@ -29,6 +29,7 @@
 #include "pub_tool_basics.h"
 #include "pub_tool_libcprint.h"
 #include "pub_tool_libcassert.h"
+#include "pub_tool_options.h"
 #include "pub_tool_tooliface.h"
 
 #include "krabcake.h" /* for client requests */
@@ -1012,8 +1013,22 @@ static void kc_fini(Int exitcode)
 {
 }
 
+struct RsClientContext {
+   Bool normalizeOutput;
+};
+
 static Bool kc_process_cmd_line_options(const HChar* arg)
 {
+   Bool   tmp_show;
+
+   // FIXME(bryangarza): Document this command-line flag?
+   if VG_BOOL_CLO(arg, "--normalize-output", tmp_show) {
+      if (tmp_show) {
+         struct RsClientContext rs_client_ctx;
+         rs_client_ctx.normalizeOutput = True;
+         rs_client_set_context(rs_client_ctx);
+      }
+   }
    return True;
 }
 
@@ -1031,6 +1046,7 @@ static void kc_print_debug_usage(void)
    );
 }
 
+extern void rs_client_set_context ( struct RsClientContext ctx );
 extern Bool rs_client_request_borrow_mut ( ThreadId tid, UWord* arg, UWord* ret );
 extern Bool rs_client_request_borrow_shr ( ThreadId tid, UWord* arg, UWord* ret );
 extern Bool rs_client_request_as_raw ( ThreadId tid, UWord* arg, UWord* ret );
