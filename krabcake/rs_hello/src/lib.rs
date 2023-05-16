@@ -13,9 +13,12 @@ use core::alloc::{GlobalAlloc, Layout};
 
 // Can now import and use anything in alloc
 use alloc::vec::Vec;
+use data::{Item, Stack, Tag};
 
+use self::data::Stacks;
 use self::vex_ir::IROp;
 
+mod data;
 mod vex_ir;
 
 extern "C" {
@@ -36,6 +39,7 @@ extern "C" {
 
 struct ValgrindAllocator;
 
+#[cfg(not(test))]
 #[global_allocator]
 static ALLOCATOR: ValgrindAllocator = ValgrindAllocator;
 
@@ -94,6 +98,7 @@ pub extern "C" fn hello_world_old(
     printn(msg.as_ptr() as *const c_char, msg.len());
 }
 
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     let msg = CStr::from_bytes_with_nul(b"Panicked!\n\0").unwrap();
@@ -103,6 +108,7 @@ fn panic(_info: &PanicInfo) -> ! {
     core::intrinsics::abort()
 }
 
+#[cfg(not(test))]
 #[lang = "eh_personality"]
 fn rust_eh_personality() {
     core::intrinsics::abort()
@@ -112,29 +118,19 @@ fn rust_eh_personality() {
 // "if you cannot beat 'em, join 'em."
 mod libc_stuff;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-struct Tag(u64);
-
-impl Tag {
-    fn next(self) -> Tag {
-        Tag(self.0 + 1)
-    }
+#[derive(Default)]
+#[repr(C)]
+pub struct Context {
+    /// Use consistent IDs instead of pointer adresses that may change across runs.
+    /// Used only for tests.
+    normalize_output: bool,
 }
 
+static mut CTX: Context = Context {
+    normalize_output: false,
+};
 static mut COUNTER: Tag = Tag(0);
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum Item {
-    Unique(Tag),
-}
-
-impl Item {
-    fn num(&self) -> u64 {
-        match *self {
-            Item::Unique(Tag(val)) => val,
-        }
-    }
-}
+static mut STACKS: Stacks = Stacks(Vec::new());
 
 // FIXME: Need to more clearly distinguish between addresses and
 // shadowing of values. I.e. the tag here needs to be attached to the
@@ -144,8 +140,6 @@ static mut TRACKED_ADDRS: Vec<(vg_addr, Tag)> = Vec::new();
 static mut TRACKED_TEMPS: Vec<(vg_uint, Tag)> = Vec::new();
 // "GREG" is "Guest Register", i.e. the emulated registers.
 static mut TRACKED_GREGS: Vec<(vg_ulong, Tag)> = Vec::new();
-
-static mut STACKS: Vec<(vg_addr, Vec<Item>)> = Vec::new();
 
 // FIXME UGLY HACK
 // this is a big bad hack: I haven't managed to connect up
@@ -263,18 +257,12 @@ fn if_addr_tracked_then<T>(addr: vg_addr, process_tag: impl FnOnce(Tag) -> T) ->
     None
 }
 
-fn if_addr_has_stack_then<T>(
-    addr: vg_addr,
-    process_stack: impl FnOnce(&mut Vec<Item>) -> T,
-) -> Option<T> {
+#[no_mangle]
+pub extern "C" fn rs_client_set_context(ctx: Context) {
     unsafe {
-        for entry in &mut STACKS {
-            if entry.0 == addr {
-                return Some(process_stack(&mut entry.1));
-            }
-        }
+        vgPlain_dmsg("lib.rs: normalizing output...\n\0".as_ptr() as *const c_char);
+        CTX = ctx;
     }
-    None
 }
 
 // The (new) protocol is: the borrowing address is stored
@@ -286,24 +274,18 @@ pub extern "C" fn rs_client_request_borrow_mut(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
-        vgPlain_dmsg(
-            "lib.rs: handle client request BORROW_MUT 0x%llx\n\0".as_ptr() as *const c_char,
-            *arg.offset(1),
-            ret,
-        );
         COUNTER = COUNTER.next();
         let stash_addr = *arg.offset(1);
         let borrowing_addr = *stash_addr as vg_addr;
         let stash_addr = stash_addr as vg_addr;
-        let lookup = if_addr_has_stack_then(borrowing_addr, |entries| {
-            entries.push(Item::Unique(COUNTER));
-        });
-        if lookup.is_none() {
-            let mut v = Vec::new();
-            v.push(Item::Unique(COUNTER));
-            STACKS.push((borrowing_addr, v));
-        }
+        let stack_idx = STACKS.push(borrowing_addr);
+        let stack_dbg_id = STACKS.0.get(stack_idx).unwrap().dbg_id();
         TRACKED_ADDRS.push((stash_addr, COUNTER));
+        vgPlain_dmsg(
+            "lib.rs: handle client request BORROW_MUT. borrowing_addr: 0x%08llx\n\0".as_ptr() as *const c_char,
+            stack_dbg_id,
+            ret,
+        );
         assert!(STACKED_BORROW_EVENT.is_none());
         STACKED_BORROW_EVENT = Some(SbEvent(SbEventKind::BorrowMut, stash_addr, borrowing_addr, COUNTER));
     }
@@ -427,38 +409,39 @@ unsafe fn check_use_1(addr: vg_addr, shadow_addr: vg_ulong) {
     //
     // 3. as a side-effect of the access, we must pop all entries that
     //    lay above the aforementioned Unique(T).
-    let lookup = if_addr_has_stack_then(addr, |stack| {
-        let before_len = stack.len();
-        while let Some(last) = stack.last() {
+    //TODO(bryangarza): Have to bring this fn back from the dead???
+    let lookup = STACKS.if_addr_has_stack_then(addr, |stack| {
+        let before_len = stack.items.len();
+        while let Some(last) = stack.items.last() {
             msg!(
                 b"tag search seeking %d and saw %d\n\0",
                 shadow_addr,
                 last.num()
             );
             if last == &Item::Unique(Tag(shadow_addr)) {
-                let after_len = stack.len();
-                return (true, before_len, after_len);
+                let after_len = stack.items.len();
+                return (stack.dbg_id(), true, before_len, after_len);
             } else {
-                stack.pop();
+                stack.items.pop();
             }
         }
-        let after_len = stack.len();
-        (false, before_len, after_len)
+        let after_len = stack.items.len();
+        (stack.dbg_id(), false, before_len, after_len)
     });
     match lookup {
         None => {
             alert!(b"ALERT no stack for address 0x%08llx even though we are accessing it via pointer with tag %d\n\0",
-			   addr,
+			   STACKS.get_stack_dbg_id_or_assign(addr),
 			   shadow_addr);
         }
-        Some((false, _, _)) => {
+        Some((stack_dbg_id, false, _, _)) => {
             alert!(b"ALERT could not find tag in stack for address 0x%08llx even though we are accesing it via pointer with tag %d\n\0",
-			   addr,
+			   stack_dbg_id,
 			   shadow_addr);
         }
-        Some((true, before_len, after_len)) => {
+        Some((stack_dbg_id, true, before_len, after_len)) => {
             msg!(b"found tag in stack for address 0x%08llx when accessing via pointer with tag %d; stack len before: %d after: %d\n\0",
-			 addr,
+			 stack_dbg_id,
 			 shadow_addr,
 			 before_len,
 			 after_len);
@@ -531,7 +514,7 @@ pub extern "C" fn rs_trace_store(
             || {
                 msg!(
                     b" addr: 0x%08llx data: %d (0x%08llx) shadow_addr: %d shadow_data: %d \n\0",
-                    addr,
+                    STACKS.get_stack_dbg_id_or_assign(addr),
                     data,
                     data,
                     shadow_addr,
@@ -543,7 +526,7 @@ pub extern "C" fn rs_trace_store(
     if_addr_tracked_then(addr as vg_addr, |tag| unsafe {
         msg!(
             b"rs_trace_store tracked addr 0x%08llx shadow_addr: %d shadow_data: %d has tag %d\n\0",
-            addr,
+            STACKS.get_stack_dbg_id_or_assign(addr),
             shadow_addr,
             shadow_data,
             tag.0,
@@ -552,28 +535,30 @@ pub extern "C" fn rs_trace_store(
 
     if_addr_tracked_then(data as vg_addr, |tag| unsafe {
         msg!(
-            b"rs_trace_store tracked data %d (0x%08llx) shadow_addr: %d shadow_data: %d has tag %d\n\0",
+            b"rs_trace_store tracked data %d (addr: 0x%08llx) shadow_addr: %d shadow_data: %d has tag %d\n\0",
             data,
-            data,
+            STACKS.get_stack_dbg_id_or_assign(addr),
             shadow_addr,
             shadow_data,
             tag.0,
         );
     });
 
-    if_addr_has_stack_then(addr, |stack| unsafe {
-        msg!(
-            b"rs_trace_store has stack on addr 0x%08llx has stack len: %d\n\0",
-            addr,
-            stack.len(),
-        );
-    });
+    unsafe {
+        STACKS.if_addr_has_stack_then(addr, |stack| unsafe {
+            msg!(
+                b"rs_trace_store has stack on addr 0x%08llx has stack len: %d\n\0",
+                STACKS.get_stack_dbg_id_or_assign(addr),
+                stack.items.len(),
+            );
+        })
+    };
 
     unsafe {
         if shadow_addr != 0 || shadow_data != 0 {
             msg!(
                 b"rs_trace_store non-trivial shadow on addr: 0x%llx data: %d (0x%08llx) shadow_addr: %d shadow_data: %d \n\0",
-                addr,
+                STACKS.get_stack_dbg_id_or_assign(addr),
                 data,
                 data,
                 shadow_addr,
@@ -632,7 +617,12 @@ pub extern "C" fn rs_trace_store256(
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_trace_store256 sb event \0"),
-            || msg!(b" addr: 0x%08llx \n\0", addr),
+            || {
+                msg!(
+                    b" addr: 0x%08llx \n\0",
+                    STACKS.get_stack_dbg_id_or_assign(addr)
+                )
+            },
         );
     }
 }
@@ -642,7 +632,12 @@ pub extern "C" fn rs_trace_llsc(addr: vg_addr) {
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_trace_store sb event \0"),
-            || msg!(b" addr: 0x%08llx \n\0", addr),
+            || {
+                msg!(
+                    b" addr: 0x%08llx \n\0",
+                    STACKS.get_stack_dbg_id_or_assign(addr)
+                )
+            },
         );
     }
 }
@@ -654,10 +649,10 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
             || msg!(b"rs_trace_put sb event \0"),
             || {
                 msg!(
-                    b" put_offset: %u data: %d (0x%08llx) shadow_data: %d\n\0",
+                    b" put_offset: %u data: %d (addr: 0x%08llx) shadow_data: %d\n\0",
                     put_offset,
                     data,
-                    data,
+                    STACKS.get_stack_dbg_id_or_assign(data),
                     shadow_data,
                 )
             },
@@ -666,10 +661,10 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
     unsafe {
         if shadow_data != 0 {
             msg!(
-                b"rs_trace_put non-trivial shadow on data at offset: %lld data: %d (0x%08llx) shadow_data: %d \n\0",
+                b"rs_trace_put non-trivial shadow on data at offset: %lld data: %d (addr: 0x%08llx) shadow_data: %d \n\0",
                 put_offset,
                 data,
-                data,
+                STACKS.get_stack_dbg_id_or_assign(data),
                 shadow_data,
             );
             TRACKED_GREGS.push((put_offset, Tag(shadow_data as u64)));
@@ -680,23 +675,25 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
 
     if_addr_tracked_then(data as vg_addr, |tag| unsafe {
         msg!(
-            b"rs_trace_put tracked data offset %lld data %d (0x%08llx) shadow_data: %d has tag %d\n\0",
+            b"rs_trace_put tracked data offset %lld data %d (addr: 0x%08llx) shadow_data: %d has tag %d\n\0",
             put_offset,
             data,
-            data,
+            STACKS.get_stack_dbg_id_or_assign(data),
             shadow_data,
             tag.0,
         );
     });
 
-    if_addr_has_stack_then(data as vg_addr, |entries| unsafe {
-        msg!(
-            b"rs_trace_put has stack on data offset %lld data %d (0x%08llx)\n\0",
-            put_offset,
-            data,
-            data,
-        );
-    });
+    unsafe {
+        STACKS.if_addr_has_stack_then(data as vg_addr, |_stack| unsafe {
+            msg!(
+                b"rs_trace_put has stack on data offset %lld data %d (addr: 0x%08llx)\n\0",
+                put_offset,
+                data,
+                STACKS.get_stack_dbg_id_or_assign(data),
+            );
+        })
+    };
 }
 
 #[no_mangle]
@@ -750,17 +747,23 @@ pub extern "C" fn rs_trace_puti(
 
     if_addr_tracked_then(data as vg_addr, |tag| unsafe {
         msg!(
-            b"rs_trace_puti data %d (0x%08llx) shadow_data: %d has tag %d\n\0",
+            b"rs_trace_puti data %d (addr: 0x%08llx) shadow_data: %d has tag %d\n\0",
             data,
-            data,
+            STACKS.get_stack_dbg_id_or_assign(data),
             shadow_data,
             tag.0,
         );
     });
 
-    if_addr_has_stack_then(data as vg_addr, |entries| unsafe {
-        msg!(b"rs_trace_puti data %d (0x%08llx)\n\0", data, data,);
-    });
+    unsafe {
+        STACKS.if_addr_has_stack_then(data as vg_addr, |_stack| unsafe {
+            msg!(
+                b"rs_trace_puti data %d (addr: 0x%08llx)\n\0",
+                data,
+                STACKS.get_stack_dbg_id_or_assign(data)
+            );
+        });
+    };
 }
 
 #[no_mangle]
@@ -921,37 +924,42 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
 }
 
 #[no_mangle]
-pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
+pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
     let memory_shadow_value_core;
     let memory_shadow_value_hack;
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_load sb event \0"),
-            || msg!(b" addr: 0x%08llx \n\0", addr),
+            || {
+                msg!(
+                    b" addr: 0x%08llx \n\0",
+                    STACKS.get_stack_dbg_id_or_assign(addr)
+                )
+            },
         );
     }
     unsafe {
         if s1 != 0 {
             msg!(
                 b"rs_shadow_load non-trivial shadow for addr 0x%08llx s1: %d\n\0",
-                addr,
+                STACKS.get_stack_dbg_id_or_assign(addr),
                 s1,
             );
         }
-        if_addr_tracked_then(addr as vg_addr, |tag| unsafe {
+        if_addr_tracked_then(addr, |tag| {
             msg!(
                 b"rs_shadow_load tracked addr 0x%08llx s1: %d has tag %d\n\0",
-                addr,
+                STACKS.get_stack_dbg_id_or_assign(addr),
                 s1,
                 tag.0,
             );
         });
-        if_addr_has_stack_then(addr as vg_addr, |stack| unsafe {
+        STACKS.if_addr_has_stack_then(addr, |stack| {
             msg!(
                 b"rs_shadow_load addr 0x%08llx s1: %d has stack len: %d\n\0",
-                addr,
+                stack.dbg_id(),
                 s1,
-                stack.len(),
+                stack.items.len(),
             );
         });
 
@@ -969,7 +977,7 @@ pub extern "C" fn rs_shadow_load(addr: vg_long, s1: vg_long) -> vg_long {
         }
 
         if s1 != 0 {
-            check_use_1(addr as vg_addr, s1 as u64);
+            check_use_1(addr, s1 as u64);
         }
     }
 
@@ -1040,6 +1048,7 @@ pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
         }
         ret = tag.0 as vg_long;
     }
+
     return ret;
 }
 

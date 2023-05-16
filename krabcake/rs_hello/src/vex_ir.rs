@@ -1,4 +1,4 @@
-#![allow(non_camel_case_types)]
+#![allow(non_camel_case_types, dead_code)]
 
 #[repr(i64)]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]

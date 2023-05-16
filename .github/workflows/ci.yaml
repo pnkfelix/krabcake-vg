@@ -1,0 +1,18 @@
+name: CI Tests
+
+on:
+  push:
+    branches: [ krabcake-vg ]
+  pull_request:
+    branches: [ krabcake-vg ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+      - name: Build rs_hello
+        run: cd krabcake/rs_hello && cargo build --release
+      - name: Test rs_hello
+        run: cd krabcake/rs_hello && cargo test
