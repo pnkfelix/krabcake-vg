@@ -1,3 +1,4 @@
+use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::{vg_addr, COUNTER, CTX, STACKS};
@@ -38,7 +39,7 @@ impl Stack {
             if CTX.normalize_output {
                 self.id
             } else {
-                self.addr as u64
+                self.addr
             }
         }
     }
@@ -65,8 +66,7 @@ impl Stacks {
                 }
             }
 
-            let mut items = Vec::new();
-            items.push(Item::Unique(COUNTER));
+            let items = vec![Item::Unique(COUNTER)];
             self.add_new_stack(addr, items)
         }
     }
@@ -90,9 +90,9 @@ impl Stacks {
         addr: vg_addr,
         process_stack: impl FnOnce(&mut Stack) -> T,
     ) -> Option<T> {
-        for mut stack in &mut self.0 {
+        for stack in &mut self.0 {
             if stack.addr == addr {
-                return Some(process_stack(&mut stack));
+                return Some(process_stack(stack));
             }
         }
         None
@@ -104,7 +104,7 @@ impl Stacks {
                 self.if_addr_has_stack_then(addr, |stack| stack.dbg_id())
                     .unwrap_or_else(|| self.reserve_dbg_id(addr))
             } else {
-                addr as u64
+                addr
             }
         }
     }
@@ -125,8 +125,7 @@ mod tests {
     // the assertions become confusing to read.
     fn new_stacks(addr: vg_addr) -> Stacks {
         unsafe {
-            let mut items = Vec::new();
-            items.push(Item::Unique(COUNTER));
+            let items = vec![Item::Unique(COUNTER)];
             let stack = Stack { addr, id: STARTING_DBG_ID, items };
             Stacks(vec![stack])
         }

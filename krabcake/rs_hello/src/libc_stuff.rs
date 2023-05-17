@@ -48,7 +48,8 @@ pub struct _Unwind_Exception {}
 #[cfg(not(test))]
 // From https://github.com/rust-lang/rust/blob/480068c2359ea65df4481788b5ce717a548ce171/library/unwind/src/libunwind.rs#L105-L107
 #[no_mangle]
-unsafe extern "C-unwind" fn _Unwind_Resume(exception: *mut _Unwind_Exception) -> ! {
+unsafe extern "C-unwind" fn _Unwind_Resume(_exception: *mut _Unwind_Exception) -> ! {
     // Looping because of ! type
+    #[allow(clippy::empty_loop)]
     loop {}
 }

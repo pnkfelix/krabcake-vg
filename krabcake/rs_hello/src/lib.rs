@@ -57,12 +57,12 @@ unsafe impl GlobalAlloc for ValgrindAllocator {
 }
 
 extern "C" {
-    fn vgPlain_sprintf(buf: *mut c_char, format: *const c_char, ...) -> u32;
-    fn vgPlain_snprintf(buf: *mut c_char, size: i32, format: *const c_char, ...) -> u32;
-    fn vgPlain_printf(format: *const c_char, ...) -> u32;
+    pub fn vgPlain_sprintf(buf: *mut c_char, format: *const c_char, ...) -> u32;
+    pub fn vgPlain_snprintf(buf: *mut c_char, size: i32, format: *const c_char, ...) -> u32;
+    pub fn vgPlain_printf(format: *const c_char, ...) -> u32;
 
-    fn vgPlain_dmsg(format: *const c_char, ...) -> u32;
-    fn vgPlain_umsg(format: *const c_char, ...) -> u32;
+    pub fn vgPlain_dmsg(format: *const c_char, ...) -> u32;
+    pub fn vgPlain_umsg(format: *const c_char, ...) -> u32;
 }
 
 #[no_mangle]
@@ -80,7 +80,7 @@ pub extern "C" fn hello_world(
     v.push(0);
     v.push(1);
     v.push(2);
-    let end = v.pop().unwrap();
+    let _end = v.pop().unwrap();
 }
 
 #[no_mangle]
@@ -93,7 +93,7 @@ pub extern "C" fn hello_world_old(
     let printed = unsafe { vgPlain_printf(msg.as_ptr() as *const c_char, msg.len()) };
     let msg = b"printed: ";
     printn(msg.as_ptr() as *const c_char, msg.len());
-    printu(printed as u32);
+    printu(printed);
     let msg: &[u8] = b"\n";
     printn(msg.as_ptr() as *const c_char, msg.len());
 }
@@ -155,9 +155,13 @@ struct SbEvent {
     borrow: vg_addr,
     tag: Tag,
 }
-fn SbEvent(kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag) -> SbEvent {
-    SbEvent { kind, stash, borrow, tag }
+
+impl SbEvent {
+    fn new(kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag) -> Self {
+        SbEvent { kind, stash, borrow, tag }
+    }
 }
+
 static mut STACKED_BORROW_EVENT: Option<SbEvent> = None;
 
 const PRINT_MSG: bool = false;
@@ -201,7 +205,7 @@ unsafe fn if_sb_event_queued_print(before: impl FnOnce(), after: impl FnOnce()) 
 }
 
 #[derive(Copy, Clone)]
-enum SbEventKind {
+pub enum SbEventKind {
     BorrowMut = 0x2000,
     BorrowShr,
     AsRaw,
@@ -270,9 +274,10 @@ pub extern "C" fn rs_client_set_context(ctx: Context) {
 
 // The (new) protocol is: the borrowing address is stored
 // *in* the memory location at *arg[0].
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn rs_client_request_borrow_mut(
-    thread_id: c_uint,
+    _thread_id: c_uint,
     arg: *const *const c_size_t,
     ret: *mut c_size_t,
 ) -> bool {
@@ -292,16 +297,16 @@ pub extern "C" fn rs_client_request_borrow_mut(
         );
         assert!(STACKED_BORROW_EVENT.is_none());
         STACKED_BORROW_EVENT =
-            Some(SbEvent(SbEventKind::BorrowMut, stash_addr, borrowing_addr, COUNTER));
+            Some(SbEvent::new(SbEventKind::BorrowMut, stash_addr, borrowing_addr, COUNTER));
     }
     true
 }
 
 #[no_mangle]
 pub extern "C" fn rs_client_request_borrow_shr(
-    thread_id: c_uint,
-    arg: *const c_size_t,
-    ret: *mut c_size_t,
+    _thread_id: c_uint,
+    _arg: *const c_size_t,
+    _ret: *mut c_size_t,
 ) -> bool {
     unsafe {
         vgPlain_dmsg("kc_handle_client_request, handle BORROW_SHR\n\0".as_ptr() as *const c_char);
@@ -311,9 +316,9 @@ pub extern "C" fn rs_client_request_borrow_shr(
 
 #[no_mangle]
 pub extern "C" fn rs_client_request_as_raw(
-    thread_id: c_uint,
-    arg: *const c_size_t,
-    ret: *mut c_size_t,
+    _thread_id: c_uint,
+    _arg: *const c_size_t,
+    _ret: *mut c_size_t,
 ) -> bool {
     unsafe {
         vgPlain_dmsg("kc_handle_client_request, handle AS_RAW\n\0".as_ptr() as *const c_char);
@@ -323,9 +328,9 @@ pub extern "C" fn rs_client_request_as_raw(
 
 #[no_mangle]
 pub extern "C" fn rs_client_request_as_borrow_mut(
-    thread_id: c_uint,
-    arg: *const c_size_t,
-    ret: *mut c_size_t,
+    _thread_id: c_uint,
+    _arg: *const c_size_t,
+    _ret: *mut c_size_t,
 ) -> bool {
     unsafe {
         vgPlain_dmsg("kc_handle_client_request, handle AS_BORROW_MUT\n\0".as_ptr() as *const c_char);
@@ -335,9 +340,9 @@ pub extern "C" fn rs_client_request_as_borrow_mut(
 
 #[no_mangle]
 pub extern "C" fn rs_client_request_as_borrow_shr(
-    thread_id: c_uint,
-    arg: *const c_size_t,
-    ret: *mut c_size_t,
+    _thread_id: c_uint,
+    _arg: *const c_size_t,
+    _ret: *mut c_size_t,
 ) -> bool {
     unsafe {
         vgPlain_dmsg("kc_handle_client_request, handle AS_BORROW_SHR\n\0".as_ptr() as *const c_char);
@@ -347,9 +352,9 @@ pub extern "C" fn rs_client_request_as_borrow_shr(
 
 #[no_mangle]
 pub extern "C" fn rs_client_request_retag_fn_prologue(
-    thread_id: c_uint,
-    arg: *const c_size_t,
-    ret: *mut c_size_t,
+    _thread_id: c_uint,
+    _arg: *const c_size_t,
+    _ret: *mut c_size_t,
 ) -> bool {
     unsafe {
         vgPlain_dmsg(
@@ -361,9 +366,9 @@ pub extern "C" fn rs_client_request_retag_fn_prologue(
 
 #[no_mangle]
 pub extern "C" fn rs_client_request_retag_assign(
-    thread_id: c_uint,
-    arg: *const c_size_t,
-    ret: *mut c_size_t,
+    _thread_id: c_uint,
+    _arg: *const c_size_t,
+    _ret: *mut c_size_t,
 ) -> bool {
     unsafe {
         vgPlain_dmsg("kc_handle_client_request, handle RETAG_ASSIGN\n\0".as_ptr() as *const c_char);
@@ -373,9 +378,9 @@ pub extern "C" fn rs_client_request_retag_assign(
 
 #[no_mangle]
 pub extern "C" fn rs_client_request_retag_raw(
-    thread_id: c_uint,
-    arg: *const c_size_t,
-    ret: *mut c_size_t,
+    _thread_id: c_uint,
+    _arg: *const c_size_t,
+    _ret: *mut c_size_t,
 ) -> bool {
     unsafe {
         vgPlain_dmsg("kc_handle_client_request, handle RETAG_RAW\n\0".as_ptr() as *const c_char);
@@ -384,19 +389,19 @@ pub extern "C" fn rs_client_request_retag_raw(
 }
 
 #[allow(non_camel_case_types)]
-type vg_bool = c_uchar;
+pub type vg_bool = c_uchar;
 #[allow(non_camel_case_types)]
-type vg_addr = c_ulong;
+pub type vg_addr = c_ulong;
 #[allow(non_camel_case_types)]
-type vg_uint = c_uint;
+pub type vg_uint = c_uint;
 #[allow(non_camel_case_types)]
-type vg_int = c_int;
+pub type vg_int = c_int;
 #[allow(non_camel_case_types)]
-type vg_ulong = c_ulonglong;
+pub type vg_ulong = c_ulonglong;
 #[allow(non_camel_case_types)]
-type vg_long = c_longlong;
+pub type vg_long = c_longlong;
 #[allow(non_camel_case_types)]
-type vg_size_t = c_size_t;
+pub type vg_size_t = c_size_t;
 
 unsafe fn check_use_1(addr: vg_addr, shadow_addr: vg_ulong) {
     assert!(shadow_addr != 0);
@@ -456,7 +461,7 @@ pub extern "C" fn rs_trace_cas(addr: vg_addr) {
     }
 }
 #[no_mangle]
-pub extern "C" fn rs_trace_storeg(guard: vg_long, addr: vg_addr, size: vg_size_t) {
+pub extern "C" fn rs_trace_storeg(guard: vg_long, addr: vg_addr, _size: vg_size_t) {
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_trace_storeg sb event \0"),
@@ -468,8 +473,8 @@ pub extern "C" fn rs_trace_storeg(guard: vg_long, addr: vg_addr, size: vg_size_t
 pub extern "C" fn rs_trace_loadg(
     guard: vg_long,
     addr: vg_addr,
-    size: vg_size_t,
-    widened_size: vg_size_t,
+    _size: vg_size_t,
+    _widened_size: vg_size_t,
 ) {
     unsafe {
         if_sb_event_queued_print(
@@ -501,7 +506,7 @@ pub extern "C" fn rs_trace_wrtmp(lhs_tmp: vg_uint, s1: vg_long) {
 pub extern "C" fn rs_trace_store(
     addr: vg_addr,
     data: vg_ulong,
-    size: vg_size_t,
+    _size: vg_size_t,
     shadow_addr: vg_ulong,
     shadow_data: vg_ulong,
 ) {
@@ -542,7 +547,7 @@ pub extern "C" fn rs_trace_store(
     });
 
     unsafe {
-        STACKS.if_addr_has_stack_then(addr, |stack| unsafe {
+        STACKS.if_addr_has_stack_then(addr, |stack| {
             msg!(
                 b"rs_trace_store has stack on addr 0x%08llx has stack len: %d\n\0",
                 STACKS.get_stack_dbg_id_or_assign(addr),
@@ -576,7 +581,7 @@ pub extern "C" fn rs_trace_store(
                 addr,
                 shadow_data,
             );
-            TRACKED_ADDRS.push((addr, Tag(shadow_data as u64)));
+            TRACKED_ADDRS.push((addr, Tag(shadow_data)));
         } else {
             TRACKED_ADDRS.retain(|a| a.0 != addr);
         }
@@ -586,11 +591,11 @@ pub extern "C" fn rs_trace_store(
 #[no_mangle]
 pub extern "C" fn rs_trace_store128(
     addr: vg_addr,
-    data1: vg_ulong,
-    data2: vg_ulong,
-    size: vg_size_t,
-    shadow_addr: vg_ulong,
-    shadow_data: vg_ulong,
+    _data1: vg_ulong,
+    _data2: vg_ulong,
+    _size: vg_size_t,
+    _shadow_addr: vg_ulong,
+    _shadow_data: vg_ulong,
 ) {
     unsafe {
         if_sb_event_queued_print(
@@ -603,13 +608,13 @@ pub extern "C" fn rs_trace_store128(
 #[no_mangle]
 pub extern "C" fn rs_trace_store256(
     addr: vg_addr,
-    data1: vg_ulong,
-    data2: vg_ulong,
-    data3: vg_ulong,
-    data4: vg_ulong,
-    size: vg_size_t,
-    shadow_addr: vg_ulong,
-    shadow_data: vg_ulong,
+    _data1: vg_ulong,
+    _data2: vg_ulong,
+    _data3: vg_ulong,
+    _data4: vg_ulong,
+    _size: vg_size_t,
+    _shadow_addr: vg_ulong,
+    _shadow_data: vg_ulong,
 ) {
     unsafe {
         if_sb_event_queued_print(
@@ -654,7 +659,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
                 STACKS.get_stack_dbg_id_or_assign(data),
                 shadow_data,
             );
-            TRACKED_GREGS.push((put_offset, Tag(shadow_data as u64)));
+            TRACKED_GREGS.push((put_offset, Tag(shadow_data)));
         } else {
             TRACKED_GREGS.retain(|entry| entry.0 != put_offset);
         }
@@ -672,7 +677,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
     });
 
     unsafe {
-        STACKS.if_addr_has_stack_then(data as vg_addr, |_stack| unsafe {
+        STACKS.if_addr_has_stack_then(data as vg_addr, |_stack| {
             msg!(
                 b"rs_trace_put has stack on data offset %lld data %d (addr: 0x%08llx)\n\0",
                 put_offset,
@@ -733,7 +738,7 @@ pub extern "C" fn rs_trace_puti(
     });
 
     unsafe {
-        STACKS.if_addr_has_stack_then(data as vg_addr, |_stack| unsafe {
+        STACKS.if_addr_has_stack_then(data as vg_addr, |_stack| {
             msg!(
                 b"rs_trace_puti data %d (addr: 0x%08llx)\n\0",
                 data,
@@ -777,7 +782,7 @@ pub extern "C" fn rs_shadow_rdtmp(tmp: vg_long) -> vg_long {
             return tag.0 as vg_long;
         }
     }
-    return 0;
+    0
 }
 
 #[no_mangle]
@@ -808,7 +813,7 @@ pub extern "C" fn rs_shadow_qop(
             msg!(b" (0x%llx) s1: %d s2: %d s3: %d s4: %d\n\0", op, s1, s2, s3, s4,);
         }
     }
-    return 0;
+    0
 }
 
 #[no_mangle]
@@ -833,7 +838,7 @@ pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_
             msg!(b"0x%llx s1: %d s2: %d s3: %d\n\0", op, s1, s2, s3,);
         }
     }
-    return 0;
+    0
 }
 
 #[no_mangle]
@@ -858,7 +863,7 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
             msg!(b" (0x%llx) s1: %d s2: %d\n\0", op, s1, s2,);
         }
     }
-    return 0;
+    0
 }
 
 extern "C" {
@@ -898,12 +903,11 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
             return s1;
         }
     }
-    return 0;
+    0
 }
 
 #[no_mangle]
 pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
-    let memory_shadow_value_core;
     let memory_shadow_value_hack;
     unsafe {
         if_sb_event_queued_print(
@@ -958,7 +962,7 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
         }
     }
 
-    memory_shadow_value_core =
+    let memory_shadow_value_core =
         if_addr_tracked_then(addr as vg_addr, |tag| tag.0 as vg_long).unwrap_or(0);
 
     // When we remove the STACKED_BORROW_EVENT hack, all of this will be
@@ -975,7 +979,7 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
     }
     // assert_eq!(memory_shadow_value_core, memory_shadow_value_hack);
 
-    return memory_shadow_value_core;
+    memory_shadow_value_core
 }
 
 #[no_mangle]
@@ -987,7 +991,7 @@ pub extern "C" fn rs_shadow_const() -> vg_long {
     unsafe {
         msg!(b"hello from rs_shadow_const\n\0");
     }
-    return 0;
+    0
 }
 
 #[no_mangle]
@@ -1008,11 +1012,11 @@ pub extern "C" fn rs_shadow_ite(cond: vg_long, s1: vg_long, s2: vg_long, s3: vg_
             );
         }
     }
-    return ret;
+    ret
 }
 
 #[no_mangle]
-pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
+pub extern "C" fn rs_shadow_get(offset: vg_long, _ty: vg_long) -> vg_long {
     let mut ret = 0;
 
     unsafe {
@@ -1029,7 +1033,7 @@ pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
         ret = tag.0 as vg_long;
     }
 
-    return ret;
+    ret
 }
 
 #[no_mangle]
@@ -1041,7 +1045,7 @@ pub extern "C" fn rs_shadow_geti() -> vg_long {
     unsafe {
         msg!(b"hello from rs_shadow_geti\n\0");
     }
-    return 0;
+    0
 }
 
 #[no_mangle]
@@ -1053,5 +1057,5 @@ pub extern "C" fn rs_shadow_ccall() -> vg_long {
     unsafe {
         msg!(b"hello from rs_shadow_ccall\n\0");
     }
-    return 0;
+    0
 }
