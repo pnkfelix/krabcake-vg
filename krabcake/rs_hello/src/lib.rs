@@ -151,9 +151,19 @@ static mut TRACKED_GREGS: Vec<(vg_ulong, Tag)> = Vec::new();
 // location.
 
 #[derive(Copy, Clone)]
-struct SbEvent { kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag }
+struct SbEvent {
+    kind: SbEventKind,
+    stash: vg_addr,
+    borrow: vg_addr,
+    tag: Tag,
+}
 fn SbEvent(kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag) -> SbEvent {
-    SbEvent { kind, stash, borrow, tag}
+    SbEvent {
+        kind,
+        stash,
+        borrow,
+        tag,
+    }
 }
 static mut STACKED_BORROW_EVENT: Option<SbEvent> = None;
 
@@ -282,12 +292,18 @@ pub extern "C" fn rs_client_request_borrow_mut(
         let stack_dbg_id = STACKS.0.get(stack_idx).unwrap().dbg_id();
         TRACKED_ADDRS.push((stash_addr, COUNTER));
         vgPlain_dmsg(
-            "lib.rs: handle client request BORROW_MUT. borrowing_addr: 0x%08llx\n\0".as_ptr() as *const c_char,
+            "lib.rs: handle client request BORROW_MUT. borrowing_addr: 0x%08llx\n\0".as_ptr()
+                as *const c_char,
             stack_dbg_id,
             ret,
         );
         assert!(STACKED_BORROW_EVENT.is_none());
-        STACKED_BORROW_EVENT = Some(SbEvent(SbEventKind::BorrowMut, stash_addr, borrowing_addr, COUNTER));
+        STACKED_BORROW_EVENT = Some(SbEvent(
+            SbEventKind::BorrowMut,
+            stash_addr,
+            borrowing_addr,
+            COUNTER,
+        ));
     }
     true
 }
@@ -823,7 +839,7 @@ pub extern "C" fn rs_shadow_qop(
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_qop sb event \0"),
             || {
-                if PRINT_MSG { ppIROp(op); }
+                maybe_pp_irop(op);
                 msg!(b" \n\0");
             },
         );
@@ -831,7 +847,7 @@ pub extern "C" fn rs_shadow_qop(
     if (s1 + s2 + s3 + s4) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_qop \0");
-            if PRINT_MSG { ppIROp(op); }
+            maybe_pp_irop(op);
             msg!(
                 b" (0x%llx) s1: %d s2: %d s3: %d s4: %d\n\0",
                 op,
@@ -851,7 +867,7 @@ pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_triop sb event \0"),
             || {
-                if PRINT_MSG { ppIROp(op); }
+                maybe_pp_irop(op);
                 msg!(b" \n\0");
             },
         );
@@ -859,7 +875,7 @@ pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_
     if (s1 + s2 + s3) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_triop \0");
-            if PRINT_MSG { ppIROp(op); }
+            maybe_pp_irop(op);
             msg!(b"0x%llx s1: %d s2: %d s3: %d\n\0", op, s1, s2, s3,);
         }
     }
@@ -872,7 +888,7 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_binop sb event \0"),
             || {
-                if PRINT_MSG { ppIROp(op); }
+                maybe_pp_irop(op);
                 msg!(b" \n\0");
             },
         );
@@ -880,7 +896,7 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
     if (s1 + s2) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_binop \0");
-            if PRINT_MSG { ppIROp(op); }
+            maybe_pp_irop(op);
             msg!(b" (0x%llx) s1: %d s2: %d\n\0", op, s1, s2,);
         }
     }
@@ -897,7 +913,7 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_unop sb event \0"),
             || {
-                if PRINT_MSG { ppIROp(op); }
+                maybe_pp_irop(op);
                 msg!(b" \n\0");
             },
         );
@@ -905,7 +921,7 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
     if s1 != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_unop \0");
-            if PRINT_MSG { ppIROp(op); }
+            maybe_pp_irop(op);
             msg!(b" (0x%llx) s1: %d\n\0", op, s1);
         }
 
@@ -966,7 +982,11 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
         if let Some(event) = STACKED_BORROW_EVENT {
             if event.stash == addr as vg_addr {
                 let s0 = event.tag.0;
-                msg!(b"rs_shadow_load 0x%08llx setting hack value for stashed tag %d\n\0", addr, s0);
+                msg!(
+                    b"rs_shadow_load 0x%08llx setting hack value for stashed tag %d\n\0",
+                    addr,
+                    s0
+                );
                 STACKED_BORROW_EVENT = None;
                 memory_shadow_value_hack = s0 as vg_long;
             } else {
@@ -981,16 +1001,19 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
         }
     }
 
-    memory_shadow_value_core = if_addr_tracked_then(addr as vg_addr, |tag| tag.0 as vg_long).unwrap_or(0);
+    memory_shadow_value_core =
+        if_addr_tracked_then(addr as vg_addr, |tag| tag.0 as vg_long).unwrap_or(0);
 
     // When we remove the STACKED_BORROW_EVENT hack, all of this will be
     // replaced with just returning memory_shadow_value_core
     if (memory_shadow_value_core != 0) || (memory_shadow_value_hack != 0) {
         unsafe {
-            msg!(b"rs_shadow_load 0x%08llx shadow core: %d hack: %d\n\0",
-                 addr,
-                 memory_shadow_value_core,
-                 memory_shadow_value_hack);
+            msg!(
+                b"rs_shadow_load 0x%08llx shadow core: %d hack: %d\n\0",
+                addr,
+                memory_shadow_value_core,
+                memory_shadow_value_hack
+            );
         }
     }
     // assert_eq!(memory_shadow_value_core, memory_shadow_value_hack);
@@ -1074,4 +1097,13 @@ pub extern "C" fn rs_shadow_ccall() -> vg_long {
         msg!(b"hello from rs_shadow_ccall\n\0");
     }
     return 0;
+}
+
+#[inline(always)]
+fn maybe_pp_irop(op: vg_long) {
+    unsafe {
+        if PRINT_MSG {
+            ppIROp(op);
+        }
+    }
 }
