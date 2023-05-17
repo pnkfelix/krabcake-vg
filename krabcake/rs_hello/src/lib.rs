@@ -126,9 +126,7 @@ pub struct Context {
     normalize_output: bool,
 }
 
-static mut CTX: Context = Context {
-    normalize_output: false,
-};
+static mut CTX: Context = Context { normalize_output: false };
 static mut COUNTER: Tag = Tag(0);
 static mut STACKS: Stacks = Stacks(Vec::new());
 
@@ -151,9 +149,14 @@ static mut TRACKED_GREGS: Vec<(vg_ulong, Tag)> = Vec::new();
 // location.
 
 #[derive(Copy, Clone)]
-struct SbEvent { kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag }
+struct SbEvent {
+    kind: SbEventKind,
+    stash: vg_addr,
+    borrow: vg_addr,
+    tag: Tag,
+}
 fn SbEvent(kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag) -> SbEvent {
-    SbEvent { kind, stash, borrow, tag}
+    SbEvent { kind, stash, borrow, tag }
 }
 static mut STACKED_BORROW_EVENT: Option<SbEvent> = None;
 
@@ -282,12 +285,14 @@ pub extern "C" fn rs_client_request_borrow_mut(
         let stack_dbg_id = STACKS.0.get(stack_idx).unwrap().dbg_id();
         TRACKED_ADDRS.push((stash_addr, COUNTER));
         vgPlain_dmsg(
-            "lib.rs: handle client request BORROW_MUT. borrowing_addr: 0x%08llx\n\0".as_ptr() as *const c_char,
+            "lib.rs: handle client request BORROW_MUT. borrowing_addr: 0x%08llx\n\0".as_ptr()
+                as *const c_char,
             stack_dbg_id,
             ret,
         );
         assert!(STACKED_BORROW_EVENT.is_none());
-        STACKED_BORROW_EVENT = Some(SbEvent(SbEventKind::BorrowMut, stash_addr, borrowing_addr, COUNTER));
+        STACKED_BORROW_EVENT =
+            Some(SbEvent(SbEventKind::BorrowMut, stash_addr, borrowing_addr, COUNTER));
     }
     true
 }
@@ -323,9 +328,7 @@ pub extern "C" fn rs_client_request_as_borrow_mut(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
-        vgPlain_dmsg(
-            "kc_handle_client_request, handle AS_BORROW_MUT\n\0".as_ptr() as *const c_char,
-        );
+        vgPlain_dmsg("kc_handle_client_request, handle AS_BORROW_MUT\n\0".as_ptr() as *const c_char);
     }
     false
 }
@@ -337,9 +340,7 @@ pub extern "C" fn rs_client_request_as_borrow_shr(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
-        vgPlain_dmsg(
-            "kc_handle_client_request, handle AS_BORROW_SHR\n\0".as_ptr() as *const c_char,
-        );
+        vgPlain_dmsg("kc_handle_client_request, handle AS_BORROW_SHR\n\0".as_ptr() as *const c_char);
     }
     false
 }
@@ -352,7 +353,7 @@ pub extern "C" fn rs_client_request_retag_fn_prologue(
 ) -> bool {
     unsafe {
         vgPlain_dmsg(
-            "kc_handle_client_request, handle RETAG_FN_PROLOGUE\n\0".as_ptr() as *const c_char,
+            "kc_handle_client_request, handle RETAG_FN_PROLOGUE\n\0".as_ptr() as *const c_char
         );
     }
     false
@@ -413,11 +414,7 @@ unsafe fn check_use_1(addr: vg_addr, shadow_addr: vg_ulong) {
     let lookup = STACKS.if_addr_has_stack_then(addr, |stack| {
         let before_len = stack.items.len();
         while let Some(last) = stack.items.last() {
-            msg!(
-                b"tag search seeking %d and saw %d\n\0",
-                shadow_addr,
-                last.num()
-            );
+            msg!(b"tag search seeking %d and saw %d\n\0", shadow_addr, last.num());
             if last == &Item::Unique(Tag(shadow_addr)) {
                 let after_len = stack.items.len();
                 return (stack.dbg_id(), true, before_len, after_len);
@@ -617,12 +614,7 @@ pub extern "C" fn rs_trace_store256(
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_trace_store256 sb event \0"),
-            || {
-                msg!(
-                    b" addr: 0x%08llx \n\0",
-                    STACKS.get_stack_dbg_id_or_assign(addr)
-                )
-            },
+            || msg!(b" addr: 0x%08llx \n\0", STACKS.get_stack_dbg_id_or_assign(addr)),
         );
     }
 }
@@ -632,12 +624,7 @@ pub extern "C" fn rs_trace_llsc(addr: vg_addr) {
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_trace_store sb event \0"),
-            || {
-                msg!(
-                    b" addr: 0x%08llx \n\0",
-                    STACKS.get_stack_dbg_id_or_assign(addr)
-                )
-            },
+            || msg!(b" addr: 0x%08llx \n\0", STACKS.get_stack_dbg_id_or_assign(addr)),
         );
     }
 }
@@ -701,13 +688,7 @@ pub extern "C" fn rs_trace_put_just_shadow(put_offset: vg_ulong, shadow_data: vg
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_trace_put_just_shadow sb event \0"),
-            || {
-                msg!(
-                    b" put_offset: %u shadow_data: %d\n\0",
-                    put_offset,
-                    shadow_data,
-                )
-            },
+            || msg!(b" put_offset: %u shadow_data: %d\n\0", put_offset, shadow_data,),
         );
     }
     unsafe {
@@ -737,11 +718,7 @@ pub extern "C" fn rs_trace_puti(
     }
     unsafe {
         if shadow_ix != 0 || shadow_data != 0 {
-            msg!(
-                b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0",
-                shadow_ix,
-                shadow_data,
-            );
+            msg!(b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0", shadow_ix, shadow_data,);
         }
     }
 
@@ -781,11 +758,7 @@ pub extern "C" fn rs_trace_puti_just_shadow(
     }
     unsafe {
         if shadow_ix != 0 || shadow_data != 0 {
-            msg!(
-                b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0",
-                shadow_ix,
-                shadow_data,
-            );
+            msg!(b"rs_trace_puti shadow_ix: %d shadow_data: %d \n\0", shadow_ix, shadow_data,);
         }
     }
 }
@@ -800,11 +773,7 @@ pub extern "C" fn rs_shadow_rdtmp(tmp: vg_long) -> vg_long {
     }
     unsafe {
         if let Some(tag) = if_temp_tracked_then(tmp as vg_uint, |tag| tag) {
-            msg!(
-                b"rs_shadow_rdtmp tracked tmp: %d has tag: %d\n\0",
-                tmp,
-                tag.0,
-            );
+            msg!(b"rs_shadow_rdtmp tracked tmp: %d has tag: %d\n\0", tmp, tag.0,);
             return tag.0 as vg_long;
         }
     }
@@ -823,7 +792,9 @@ pub extern "C" fn rs_shadow_qop(
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_qop sb event \0"),
             || {
-                if PRINT_MSG { ppIROp(op); }
+                if PRINT_MSG {
+                    ppIROp(op);
+                }
                 msg!(b" \n\0");
             },
         );
@@ -831,15 +802,10 @@ pub extern "C" fn rs_shadow_qop(
     if (s1 + s2 + s3 + s4) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_qop \0");
-            if PRINT_MSG { ppIROp(op); }
-            msg!(
-                b" (0x%llx) s1: %d s2: %d s3: %d s4: %d\n\0",
-                op,
-                s1,
-                s2,
-                s3,
-                s4,
-            );
+            if PRINT_MSG {
+                ppIROp(op);
+            }
+            msg!(b" (0x%llx) s1: %d s2: %d s3: %d s4: %d\n\0", op, s1, s2, s3, s4,);
         }
     }
     return 0;
@@ -851,7 +817,9 @@ pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_triop sb event \0"),
             || {
-                if PRINT_MSG { ppIROp(op); }
+                if PRINT_MSG {
+                    ppIROp(op);
+                }
                 msg!(b" \n\0");
             },
         );
@@ -859,7 +827,9 @@ pub extern "C" fn rs_shadow_triop(op: vg_long, s1: vg_long, s2: vg_long, s3: vg_
     if (s1 + s2 + s3) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_triop \0");
-            if PRINT_MSG { ppIROp(op); }
+            if PRINT_MSG {
+                ppIROp(op);
+            }
             msg!(b"0x%llx s1: %d s2: %d s3: %d\n\0", op, s1, s2, s3,);
         }
     }
@@ -872,7 +842,9 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_binop sb event \0"),
             || {
-                if PRINT_MSG { ppIROp(op); }
+                if PRINT_MSG {
+                    ppIROp(op);
+                }
                 msg!(b" \n\0");
             },
         );
@@ -880,7 +852,9 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
     if (s1 + s2) != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_binop \0");
-            if PRINT_MSG { ppIROp(op); }
+            if PRINT_MSG {
+                ppIROp(op);
+            }
             msg!(b" (0x%llx) s1: %d s2: %d\n\0", op, s1, s2,);
         }
     }
@@ -897,7 +871,9 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_unop sb event \0"),
             || {
-                if PRINT_MSG { ppIROp(op); }
+                if PRINT_MSG {
+                    ppIROp(op);
+                }
                 msg!(b" \n\0");
             },
         );
@@ -905,7 +881,9 @@ pub extern "C" fn rs_shadow_unop(op: vg_long, s1: vg_long) -> vg_long {
     if s1 != 0 {
         unsafe {
             msg!(b"hello from rs_shadow_unop \0");
-            if PRINT_MSG { ppIROp(op); }
+            if PRINT_MSG {
+                ppIROp(op);
+            }
             msg!(b" (0x%llx) s1: %d\n\0", op, s1);
         }
 
@@ -930,12 +908,7 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
     unsafe {
         if_sb_event_queued_print(
             || msg!(b"rs_shadow_load sb event \0"),
-            || {
-                msg!(
-                    b" addr: 0x%08llx \n\0",
-                    STACKS.get_stack_dbg_id_or_assign(addr)
-                )
-            },
+            || msg!(b" addr: 0x%08llx \n\0", STACKS.get_stack_dbg_id_or_assign(addr)),
         );
     }
     unsafe {
@@ -966,7 +939,11 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
         if let Some(event) = STACKED_BORROW_EVENT {
             if event.stash == addr as vg_addr {
                 let s0 = event.tag.0;
-                msg!(b"rs_shadow_load 0x%08llx setting hack value for stashed tag %d\n\0", addr, s0);
+                msg!(
+                    b"rs_shadow_load 0x%08llx setting hack value for stashed tag %d\n\0",
+                    addr,
+                    s0
+                );
                 STACKED_BORROW_EVENT = None;
                 memory_shadow_value_hack = s0 as vg_long;
             } else {
@@ -981,16 +958,19 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
         }
     }
 
-    memory_shadow_value_core = if_addr_tracked_then(addr as vg_addr, |tag| tag.0 as vg_long).unwrap_or(0);
+    memory_shadow_value_core =
+        if_addr_tracked_then(addr as vg_addr, |tag| tag.0 as vg_long).unwrap_or(0);
 
     // When we remove the STACKED_BORROW_EVENT hack, all of this will be
     // replaced with just returning memory_shadow_value_core
     if (memory_shadow_value_core != 0) || (memory_shadow_value_hack != 0) {
         unsafe {
-            msg!(b"rs_shadow_load 0x%08llx shadow core: %d hack: %d\n\0",
-                 addr,
-                 memory_shadow_value_core,
-                 memory_shadow_value_hack);
+            msg!(
+                b"rs_shadow_load 0x%08llx shadow core: %d hack: %d\n\0",
+                addr,
+                memory_shadow_value_core,
+                memory_shadow_value_hack
+            );
         }
     }
     // assert_eq!(memory_shadow_value_core, memory_shadow_value_hack);

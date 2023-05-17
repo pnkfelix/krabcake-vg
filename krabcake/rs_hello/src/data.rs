@@ -80,11 +80,7 @@ impl Stacks {
     // FIXME: Optimize this in the future
     fn reserve_dbg_id(&mut self, addr: vg_addr) -> u64 {
         let id = self.next_id();
-        let stack = Stack {
-            addr,
-            id,
-            items: Vec::new(),
-        };
+        let stack = Stack { addr, id, items: Vec::new() };
         self.0.push(stack);
         id
     }
@@ -131,11 +127,7 @@ mod tests {
         unsafe {
             let mut items = Vec::new();
             items.push(Item::Unique(COUNTER));
-            let stack = Stack {
-                addr,
-                id: STARTING_DBG_ID,
-                items,
-            };
+            let stack = Stack { addr, id: STARTING_DBG_ID, items };
             Stacks(vec![stack])
         }
     }
@@ -150,6 +142,9 @@ mod tests {
 
     #[test]
     fn get_dbg_ids() {
+        unsafe {
+            CTX = Context { normalize_output: false };
+        }
         let mut stacks = new_stacks(0xdeadbeef);
         stacks.push(101);
         stacks.push(102);
@@ -166,9 +161,7 @@ mod tests {
     #[test]
     fn get_dbg_ids_normalized() {
         unsafe {
-            CTX = Context {
-                normalize_output: true,
-            };
+            CTX = Context { normalize_output: true };
         }
         let mut stacks = new_stacks(0xdeadbeef);
         stacks.push(101);
