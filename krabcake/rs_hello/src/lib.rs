@@ -668,7 +668,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
                     b" put_offset: %u data: %d (addr: 0x%08llx) shadow_data: %d\n\0",
                     put_offset,
                     data,
-                    STACKS.get_stack_dbg_id_or_assign(data),
+                    STACKS.get_stack_dbg_id_or_assign(data as vg_addr),
                     shadow_data,
                 )
             },
@@ -680,7 +680,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
                 b"rs_trace_put non-trivial shadow on data at offset: %lld data: %d (addr: 0x%08llx) shadow_data: %d \n\0",
                 put_offset,
                 data,
-                STACKS.get_stack_dbg_id_or_assign(data),
+                STACKS.get_stack_dbg_id_or_assign(data as vg_addr),
                 shadow_data,
             );
             TRACKED_GREGS.push((put_offset, Tag(shadow_data as u64)));
@@ -694,7 +694,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
             b"rs_trace_put tracked data offset %lld data %d (addr: 0x%08llx) shadow_data: %d has tag %d\n\0",
             put_offset,
             data,
-            STACKS.get_stack_dbg_id_or_assign(data),
+            STACKS.get_stack_dbg_id_or_assign(data as vg_addr),
             shadow_data,
             tag.0,
         );
@@ -706,7 +706,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
                 b"rs_trace_put has stack on data offset %lld data %d (addr: 0x%08llx)\n\0",
                 put_offset,
                 data,
-                STACKS.get_stack_dbg_id_or_assign(data),
+                STACKS.get_stack_dbg_id_or_assign(data as vg_addr),
             );
         })
     };
@@ -765,7 +765,7 @@ pub extern "C" fn rs_trace_puti(
         msg!(
             b"rs_trace_puti data %d (addr: 0x%08llx) shadow_data: %d has tag %d\n\0",
             data,
-            STACKS.get_stack_dbg_id_or_assign(data),
+            STACKS.get_stack_dbg_id_or_assign(data as vg_addr),
             shadow_data,
             tag.0,
         );
@@ -776,7 +776,7 @@ pub extern "C" fn rs_trace_puti(
             msg!(
                 b"rs_trace_puti data %d (addr: 0x%08llx)\n\0",
                 data,
-                STACKS.get_stack_dbg_id_or_assign(data)
+                STACKS.get_stack_dbg_id_or_assign(data as vg_addr)
             );
         });
     };
