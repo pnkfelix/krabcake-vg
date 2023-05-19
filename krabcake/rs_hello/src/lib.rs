@@ -447,20 +447,20 @@ unsafe fn check_use_1(addr: vg_addr, shadow_addr: vg_ulong) {
     match lookup {
         None => {
             alert!(b"ALERT no stack for address 0x%08llx even though we are accessing it via pointer with tag %d\n\0",
-			   STACKS.get_stack_dbg_id_or_assign(addr),
-			   shadow_addr);
+                           STACKS.get_stack_dbg_id_or_assign(addr),
+                           shadow_addr);
         }
         Some((stack_dbg_id, false, _, _)) => {
             alert!(b"ALERT could not find tag in stack for address 0x%08llx even though we are accesing it via pointer with tag %d\n\0",
-			   stack_dbg_id,
-			   shadow_addr);
+                           stack_dbg_id,
+                           shadow_addr);
         }
         Some((stack_dbg_id, true, before_len, after_len)) => {
             msg!(b"found tag in stack for address 0x%08llx when accessing via pointer with tag %d; stack len before: %d after: %d\n\0",
-			 stack_dbg_id,
-			 shadow_addr,
-			 before_len,
-			 after_len);
+                         stack_dbg_id,
+                         shadow_addr,
+                         before_len,
+                         after_len);
         }
     }
 }
