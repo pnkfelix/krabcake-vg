@@ -1,0 +1,21 @@
+#!/bin/sh
+
+set -eu
+
+# https://deaddabe.fr/blog/2021/09/29/git-pre-commit-hook-for-rust-projects/
+# https://asciiflow.com
+
+cd krabcake/rs_hello
+
+if ! cargo fmt -- --check
+then
+    echo '┌─────────────────────────────────────────────────────────┐'
+    echo '│                                                         │'
+    echo '│ There are some code style issues in the rs_hello crate. │'
+    echo '│      Run `cargo fmt` in `krabcake/rs_hello` first.      │'
+    echo '│                                                         │'
+    echo '└─────────────────────────────────────────────────────────┘'
+    exit 1
+fi
+
+exit 0

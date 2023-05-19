@@ -150,6 +150,11 @@ mod tests {
 
     #[test]
     fn get_dbg_ids() {
+        unsafe {
+            CTX = Context {
+                normalize_output: false,
+            };
+        }
         let mut stacks = new_stacks(0xdeadbeef);
         stacks.push(101);
         stacks.push(102);

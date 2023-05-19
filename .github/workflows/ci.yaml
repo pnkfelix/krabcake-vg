@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v3
+      - name: Fmt check rs_hello
+        run: cd krabcake/rs_hello && cargo fmt --check
       - name: Build rs_hello
         run: cd krabcake/rs_hello && cargo build --release
       - name: Test rs_hello
