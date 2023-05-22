@@ -10,7 +10,7 @@ RSHELLO_TARGET_DEBUG32 = $(RSHELLO_DIR)/target/debug32
 
 #$(RSHELLO_TARGET)/librs_hello.a:
 #	cd $(srcdir)/$(RSHELLO_DIR); \
-#            cd $(CARGO) rustc --release -- \
+#            cd $(CARGO) rustup run nightly rustc --release -- \
 #            -C lto --emit dep-info,link=$(abs_builddir)/$@
 
 # $(RSHELLO_TARGET)/librs_hello.a:
@@ -26,13 +26,15 @@ $(RSHELLO_TARGET)/librs_hello.x86.a: $(RSHELLO_TARGET_DEBUG32)/librs_hello.x86.a
 
 $(RSHELLO_TARGET_DEBUG64)/librs_hello.amd64.a: $(RSHELLO_DIR)/src/lib.rs $(RSHELLO_DIR)/src/*.rs
 	mkdir -p $(RSHELLO_TARGET_DEBUG64)
+	[[ -n "$CI" ]] && ! rustup toolchain list | grep -q nightly && rustup toolchain install nightly
 	rustup target add x86_64-unknown-linux-gnu
-	rustc -g --edition=2021 --target=x86_64-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
+	rustup run nightly rustc -g --edition=2021 --target=x86_64-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
 
 $(RSHELLO_TARGET_DEBUG32)/librs_hello.x86.a: $(RSHELLO_DIR)/src/lib.rs $(RSHELLO_DIR)/src/*.rs
 	mkdir -p $(RSHELLO_TARGET_DEBUG32)
+	[[ -n "$CI" ]] && ! rustup toolchain list | grep -q nightly && rustup toolchain install nightly
 	rustup target add i586-unknown-linux-gnu
-	rustc -g --edition=2021 --target=i586-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
+	rustup run nightly rustc -g --edition=2021 --target=i586-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
 
 clean-local:
 	cd $(srcdir)/$(RSHELLO_DIR); cargo clean
