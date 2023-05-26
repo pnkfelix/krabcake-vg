@@ -73,7 +73,8 @@ impl Stacks {
 
     // Get the next ID (currently, it is just monotonically increasing)
     fn next_id(&self) -> u64 {
-        self.0.last().map(|stack| stack.id + 1).unwrap_or_default()
+        const INIT_NORM_ADDR: u64 = 0x10000000;
+        self.0.last().map(|stack| stack.id + 1).unwrap_or(INIT_NORM_ADDR)
     }
 
     // To reserve each dbg id, add an empty `Vec` into Stacks

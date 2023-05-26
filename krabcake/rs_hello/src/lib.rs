@@ -451,7 +451,7 @@ unsafe fn check_use_1(addr: vg_addr, shadow_addr: vg_ulong) {
                            shadow_addr);
         }
         Some((stack_dbg_id, false, _, _)) => {
-            alert!(b"ALERT could not find tag in stack for address 0x%08llx even though we are accesing it via pointer with tag %d\n\0",
+            alert!(b"ALERT could not find tag in stack for address 0x%08llx even though we are accessing it via pointer with tag %d\n\0",
                            stack_dbg_id,
                            shadow_addr);
         }
