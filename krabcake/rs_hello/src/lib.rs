@@ -3,8 +3,9 @@
 #![no_std]
 #![allow(unused_imports)]
 
-use core::ffi::{c_char, c_int, c_longlong, c_size_t, c_uchar, c_uint};
-use core::ffi::{c_ulong, c_ulonglong, c_void, CStr};
+use core::ffi::{
+    c_char, c_int, c_longlong, c_size_t, c_uchar, c_uint, c_ulong, c_ulonglong, c_void, CStr,
+};
 use core::panic::PanicInfo;
 use core::ptr;
 
@@ -21,6 +22,10 @@ use self::vex_ir::IROp;
 mod data;
 mod vex_ir;
 
+// Same as what coregrind uses
+#[cfg(not(test))]
+const BACKTRACE_DEPTH: c_uint = 100;
+
 extern "C" {
     // From krabcake-vg/include/pub_tool_mallocfree.h
     // Nb: the allocators *always succeed* -- they never return NULL (Valgrind
@@ -35,6 +40,11 @@ extern "C" {
     // Implementation lives in krabcake-vg/coregrind/m_mallocfree.c
     fn vgPlain_malloc(cc: *const c_char, nbytes: c_size_t) -> *mut c_void;
     fn vgPlain_free(p: *mut c_void);
+
+    // From coregrind/m_stacktrace.c
+    // Get and immediately print a StackTrace.
+    // void VG_(get_and_pp_StackTrace) ( ThreadId tid, UInt max_n_ips )
+    fn vgPlain_get_and_pp_StackTrace(tid: c_uint, max_n_ips: c_uint);
 }
 
 struct ValgrindAllocator;
@@ -104,6 +114,7 @@ fn panic(_info: &PanicInfo) -> ! {
     let msg = CStr::from_bytes_with_nul(b"Panicked!\n\0").unwrap();
     unsafe {
         libc_stuff::printf(msg.as_ptr());
+        vgPlain_get_and_pp_StackTrace(THREAD_ID, BACKTRACE_DEPTH);
     }
     core::intrinsics::abort()
 }
@@ -125,6 +136,10 @@ pub struct Context {
     /// Used only for tests.
     normalize_output: bool,
 }
+
+// FIXME: Find a better way to pass around the current thread ID.
+// This is only needed so that we know what ID to use when panicking.
+static mut THREAD_ID: c_uint = 0;
 
 static mut CTX: Context = Context {
     normalize_output: false,
@@ -284,6 +299,7 @@ pub extern "C" fn rs_client_request_borrow_mut(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        THREAD_ID = thread_id;
         COUNTER = COUNTER.next();
         let stash_addr = *arg.offset(1);
         let borrowing_addr = *stash_addr as vg_addr;
@@ -315,6 +331,7 @@ pub extern "C" fn rs_client_request_borrow_shr(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        THREAD_ID = thread_id;
         vgPlain_dmsg("kc_handle_client_request, handle BORROW_SHR\n\0".as_ptr() as *const c_char);
     }
     false
@@ -327,6 +344,7 @@ pub extern "C" fn rs_client_request_as_raw(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        THREAD_ID = thread_id;
         vgPlain_dmsg("kc_handle_client_request, handle AS_RAW\n\0".as_ptr() as *const c_char);
     }
     false
@@ -339,6 +357,7 @@ pub extern "C" fn rs_client_request_as_borrow_mut(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        THREAD_ID = thread_id;
         vgPlain_dmsg(
             "kc_handle_client_request, handle AS_BORROW_MUT\n\0".as_ptr() as *const c_char,
         );
@@ -353,6 +372,7 @@ pub extern "C" fn rs_client_request_as_borrow_shr(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        THREAD_ID = thread_id;
         vgPlain_dmsg(
             "kc_handle_client_request, handle AS_BORROW_SHR\n\0".as_ptr() as *const c_char,
         );
@@ -367,6 +387,7 @@ pub extern "C" fn rs_client_request_retag_fn_prologue(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        THREAD_ID = thread_id;
         vgPlain_dmsg(
             "kc_handle_client_request, handle RETAG_FN_PROLOGUE\n\0".as_ptr() as *const c_char,
         );
@@ -381,6 +402,7 @@ pub extern "C" fn rs_client_request_retag_assign(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        THREAD_ID = thread_id;
         vgPlain_dmsg("kc_handle_client_request, handle RETAG_ASSIGN\n\0".as_ptr() as *const c_char);
     }
     false
@@ -393,6 +415,7 @@ pub extern "C" fn rs_client_request_retag_raw(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        THREAD_ID = thread_id;
         vgPlain_dmsg("kc_handle_client_request, handle RETAG_RAW\n\0".as_ptr() as *const c_char);
     }
     false
