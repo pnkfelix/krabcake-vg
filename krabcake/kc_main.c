@@ -1055,6 +1055,8 @@ extern Bool rs_client_request_as_borrow_shr ( ThreadId tid, UWord* arg, UWord* r
 extern Bool rs_client_request_retag_fn_prologue ( ThreadId tid, UWord* arg, UWord* ret );
 extern Bool rs_client_request_retag_assign ( ThreadId tid, UWord* arg, UWord* ret );
 extern Bool rs_client_request_retag_raw ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_print_tag_of ( ThreadId tid, UWord* arg, UWord* ret );
+extern Bool rs_client_request_print_stack_of ( ThreadId tid, UWord* arg, UWord* ret );
 extern Bool rs_client_request_intrinsics_assume ( ThreadId tid, UWord* arg, UWord* ret );
 
 static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
@@ -1103,6 +1105,14 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
       VG_(dmsg)("kc_handle_client_request, handle INTRINSICS_ASSUME %llx %llx %llx %llx %llx\n",
                 (ULong)arg[1], (ULong)arg[2], (ULong)arg[3], (ULong)arg[4], (ULong)arg[5]);
       handled = True;
+      break;
+   }
+   case VG_USERREQ__PRINT_TAG_OF: {
+      handled = rs_client_request_print_tag_of(tid, arg, ret);
+      break;
+   }
+   case VG_USERREQ__PRINT_STACK_OF: {
+      handled = rs_client_request_print_stack_of(tid, arg, ret);
       break;
    }
    default:

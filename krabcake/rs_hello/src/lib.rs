@@ -421,6 +421,71 @@ pub extern "C" fn rs_client_request_retag_raw(
     false
 }
 
+#[no_mangle]
+pub extern "C" fn rs_client_request_print_tag_of(
+    thread_id: c_uint,
+    arg: *const *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    unsafe {
+        // protocol similar to rs_client_request_borrow_mut
+        let stash_addr = *arg.offset(1);
+        let address_of_interest = *stash_addr as vg_addr;
+        let stash_addr = stash_addr as vg_addr;
+        let name_addr = *arg.offset(2);
+
+        if let Some(x) = if_addr_tracked_then(
+            stash_addr,
+            |tag| {
+                vgPlain_umsg(b"print_tag_of `%s` (0x%08llx): %d\n\0".as_ptr() as *const c_char,
+                             name_addr,
+                             STACKS.get_stack_dbg_id_or_assign(address_of_interest),
+                             tag.0);
+                true
+            }
+        ) {
+            x
+        } else {
+            vgPlain_umsg(b"print_tag_of `%s` (0x%08llx), no tag found\n\0".as_ptr() as *const c_char,
+                         name_addr,
+                         address_of_interest
+            );
+            true
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rs_client_request_print_stack_of(
+    thread_id: c_uint,
+    arg: *const *const c_size_t,
+    ret: *mut c_size_t,
+) -> bool {
+    // protocol similar to rs_client_request_borrow_mut
+    unsafe {
+        let client_addr = {
+            let stash_addr = *arg.offset(1);
+            *stash_addr as vg_addr
+        };
+        let name_addr = *arg.offset(2);
+        if let Some(x) = STACKS.if_addr_has_stack_then(client_addr, |stack| {
+            vgPlain_umsg(b"print_stack_of `%s` (0x%08llx): [_, _]\n\0".as_ptr() as *const c_char,
+                         name_addr,
+                         STACKS.get_stack_dbg_id_or_assign(client_addr));
+            true
+        }) {
+            x
+        } else {
+            unsafe {
+                vgPlain_umsg(b"print_stack_of `%s` (0x%08llx), no stack found\n\0".as_ptr() as *const c_char,
+                             name_addr,
+                             client_addr);
+            }
+            true
+        }
+    }
+}
+
 #[allow(non_camel_case_types)]
 type vg_bool = c_uchar;
 #[allow(non_camel_case_types)]
