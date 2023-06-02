@@ -925,11 +925,9 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
       IRStmt* st = sbIn->stmts[i];
       if (!st) continue;
 
-      /*
-      VG_(printf)("stmt[%d]: ", i);
+      VG_(printf)("kc_instrument stmt[%d]: ", i);
       ppIRStmt(st);
       VG_(printf)("\n");
-      */
 
       switch (st->tag) {
          // == LOAD+STORE instructions ==
@@ -1123,6 +1121,9 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          );
          return False;
    }
+
+   VG_(dmsg)("kc_handle_client_request returning with handled: %s and ret val: 0x%08llx\n",
+             handled ? "true" : "false", *ret);
 
    return handled;
 }

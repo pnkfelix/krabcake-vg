@@ -182,7 +182,7 @@ fn SbEvent(kind: SbEventKind, stash: vg_addr, borrow: vg_addr, tag: Tag) -> SbEv
 }
 static mut STACKED_BORROW_EVENT: Option<SbEvent> = None;
 
-const PRINT_MSG: bool = false;
+const PRINT_MSG: bool = true;
 
 macro_rules! msg {
     ($x: literal) => { msg!($x,) };
