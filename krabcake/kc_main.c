@@ -925,9 +925,11 @@ IRSB* kc_instrument ( VgCallbackClosure* closure,
       IRStmt* st = sbIn->stmts[i];
       if (!st) continue;
 
+#if 0
       VG_(printf)("kc_instrument stmt[%d]: ", i);
       ppIRStmt(st);
       VG_(printf)("\n");
+#endif
 
       switch (st->tag) {
          // == LOAD+STORE instructions ==

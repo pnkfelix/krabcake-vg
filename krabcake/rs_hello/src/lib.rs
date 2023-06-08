@@ -427,6 +427,7 @@ pub extern "C" fn rs_client_request_print_tag_of(
     arg: *const *const c_size_t,
     ret: *mut c_size_t,
 ) -> bool {
+    let mut retval = false;
     unsafe {
         // protocol similar to rs_client_request_borrow_mut
         let stash_addr = *arg.offset(1);
@@ -434,7 +435,7 @@ pub extern "C" fn rs_client_request_print_tag_of(
         let stash_addr = stash_addr as vg_addr;
         let name_addr = *arg.offset(2);
 
-        if let Some(x) = if_addr_tracked_then(
+        retval = if let Some(x) = if_addr_tracked_then(
             stash_addr,
             |tag| {
                 vgPlain_umsg(b"print_tag_of `%s` (0x%08llx): %d\n\0".as_ptr() as *const c_char,
@@ -453,6 +454,12 @@ pub extern "C" fn rs_client_request_print_tag_of(
             true
         }
     }
+
+    if retval {
+        unsafe { *ret = 0; }
+    }
+
+    retval
 }
 
 #[no_mangle]

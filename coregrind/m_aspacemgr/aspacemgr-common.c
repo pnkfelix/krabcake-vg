@@ -563,7 +563,7 @@ VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp )
 
    p = (UInt*)&stack->bytes[VG_STACK_GUARD_SZB];
    for (i = 0; i < VG_(clo_valgrind_stacksize)/sizeof(UInt); i++)
-      p[i] = 0xDEADBEEF;
+      p[i] = (0xDEADBEE0 + (i % 15));
 
    *initial_sp = (Addr)&stack->bytes[VG_STACK_GUARD_SZB + VG_(clo_valgrind_stacksize)];
    *initial_sp -= 8;
@@ -594,7 +594,7 @@ SizeT VG_(am_get_VgStack_unused_szB)( const VgStack* stack, SizeT limit )
 
    p = (const UInt*)&stack->bytes[VG_STACK_GUARD_SZB];
    for (i = 0; i < VG_(clo_valgrind_stacksize)/sizeof(UInt); i++) {
-      if (p[i] != 0xDEADBEEF)
+      if ((p[i] & 0xFFFFFFF0) != 0xDEADBEE0)
          break;
       if (i * sizeof(UInt) >= limit)
          break;
