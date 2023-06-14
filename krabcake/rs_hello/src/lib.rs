@@ -299,6 +299,7 @@ pub extern "C" fn rs_client_request_borrow_mut(
     ret: *mut c_size_t,
 ) -> bool {
     unsafe {
+        START_BEING_LOUD = true;
         THREAD_ID = thread_id;
         COUNTER = COUNTER.next();
         let stash_addr = *arg.offset(1);
@@ -314,12 +315,14 @@ pub extern "C" fn rs_client_request_borrow_mut(
             ret,
         );
         assert!(STACKED_BORROW_EVENT.is_none());
+        /*
         STACKED_BORROW_EVENT = Some(SbEvent(
             SbEventKind::BorrowMut,
             stash_addr,
             borrowing_addr,
             COUNTER,
         ));
+*/
     }
     true
 }
@@ -456,7 +459,7 @@ pub extern "C" fn rs_client_request_print_tag_of(
     }
 
     if retval {
-        unsafe { *ret = 0; }
+        unsafe { *ret = 0x23454321; }
     }
 
     retval
@@ -1000,6 +1003,7 @@ pub extern "C" fn rs_shadow_binop(op: vg_long, s1: vg_long, s2: vg_long) -> vg_l
 
 extern "C" {
     fn ppIROp(opcode: vg_long);
+    fn ppIRType(type_: vg_long);
 }
 
 #[no_mangle]
@@ -1149,9 +1153,26 @@ pub extern "C" fn rs_shadow_ite(cond: vg_long, s1: vg_long, s2: vg_long, s3: vg_
     return ret;
 }
 
+static mut START_BEING_LOUD: bool = false;
+
+#[no_mangle]
+pub extern "C" fn rs_shadow_get_with_val(offset: vg_long, ty: vg_long, val: vg_long) -> vg_long {
+    unsafe {
+        if START_BEING_LOUD {
+            msg!(b"hello from rs_shadow_get_with_val offset: %lld val: 0x%08llx \n\0", offset, val);
+        }
+    }
+    rs_shadow_get(offset, ty)
+}
+
 #[no_mangle]
 pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
     let mut ret = 0;
+    unsafe {
+        if START_BEING_LOUD {
+            msg!(b"entered rs_shadow_get offset: %lld type: %d\n\0", offset, ty,);
+        }
+    }
 
     unsafe {
         if_sb_event_queued_print(
@@ -1169,6 +1190,21 @@ pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
 
     return ret;
 }
+
+// TODO: At this point, need to consider instrumenting as many of the
+// rs_{shadow,trace} routines as needed to determine where the radioactive value
+// is leaking into the computation.
+//
+// Luckily it seems like only a few of the operations actually run before we
+// observe it, namely { Iex_Get, Ist_WrTmp, Iex_RdTmp, Ist_Store }
+//
+// (The count gets bigger if you consider all the operations that go into the
+// IRExprs that are fed into the statements above, but hopefully we can focus on
+// memory transfering operations on the host).
+//
+// So hopefully we can semi-robustly instrument those, find out which ones are
+// seeing this value seep in, and then figure out how to stop that from
+// happening.
 
 #[no_mangle]
 pub extern "C" fn rs_shadow_geti() -> vg_long {

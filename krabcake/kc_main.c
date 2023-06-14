@@ -123,6 +123,7 @@ extern Long rs_shadow_load ( Addr addr, Long s1 );
 extern Long rs_shadow_const ( );
 extern Long rs_shadow_ite ( Long cond, Long s1, Long s2, Long s3 );
 extern Long rs_shadow_get ( Long offset, Long ty );
+extern Long rs_shadow_get_with_val ( Long offset, Long ty, Long val );
 extern Long rs_shadow_geti ( );
 extern Long rs_shadow_ccall ( );
 
@@ -290,6 +291,8 @@ IRTemp newHWordTemp ( IRSB* sbOut ) {
    return newIRTemp( sbOut->tyenv, Ity_I64 );
 }
 
+static int START_BEING_LOUD = 0;
+
 static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
                                         IRExpr* e,
                                         ExprContext ec)
@@ -297,7 +300,7 @@ static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
    IRExpr* (*recur)(IRSB *sbOut, IRExpr* e, ExprContext exc);
    recur = kc_construct_shadow_eval;
 
-   if (0 && ec == Expr_Load_Addr) {
+   if (0 && START_BEING_LOUD /* ec == Expr_Load_Addr */) {
       VG_(printf)("kc_construct_shadow_eval "); ppIRExpr(e); VG_(printf)("\n");
    }
    
@@ -435,16 +438,37 @@ static IRExpr* kc_construct_shadow_eval(IRSB* sbOut,
       break;
       /* Read a guest register, at a fixed offset in the guest state.
          ppIRExpr output: GET:<ty>(<offset>), eg. GET:I32(0) */
-   case Iex_Get:
-      di = unsafeIRDirty_1_N(
-         recvTmp,
-         0,
-         "rs_shadow_get",
-         VG_(fnptr_to_fnentry)( &rs_shadow_get ),
-         mkIRExprVec_2(mkIRExpr_HWord(e->Iex.Get.offset),
-                       mkIRExpr_HWord(e->Iex.Get.ty))
-         );
+   case Iex_Get: {
+      IRType ty = e->Iex.Get.ty;
+      if (ty == Ity_I64) {
+         if (START_BEING_LOUD) {
+            VG_(printf)("kc_construct_shadow_eval A Iex_Get offset: %lld ty: %lld ", e->Iex.Get.offset, ty); ppIRType(ty); VG_(printf)("\n");
+         }
+         IRExpr *value = assignNew('V', sbOut, Ity_I64, e);
+         di = unsafeIRDirty_1_N(
+            recvTmp,
+            0,
+            "rs_shadow_get_with_val",
+            VG_(fnptr_to_fnentry)( &rs_shadow_get_with_val ),
+            mkIRExprVec_3(mkIRExpr_HWord(e->Iex.Get.offset),
+                          mkIRExpr_HWord(ty),
+                          value)
+            );
+      } else {
+         if (START_BEING_LOUD) {
+            VG_(printf)("kc_construct_shadow_eval B Iex_Get offset: %lld ty: %lld ", e->Iex.Get.offset, ty); ppIRType(ty); VG_(printf)("\n");
+         }
+         di = unsafeIRDirty_1_N(
+            recvTmp,
+            0,
+            "rs_shadow_get",
+            VG_(fnptr_to_fnentry)( &rs_shadow_get ),
+            mkIRExprVec_2(mkIRExpr_HWord(e->Iex.Get.offset),
+                          mkIRExpr_HWord(ty))
+            );
+      }
       break;
+   }
       /* Read a guest register at a non-fixed offset in the guest state; allows
          circular indexing into parts of the guest state. 
          ppIRExpr output: GETI<descr>[<ix>,<bias] eg. GETI(128:8xI8)[t1,0] */
@@ -487,6 +511,9 @@ static void kc_instrument_expr_eval(IRSB* sbOut,
                                     IRExpr* data,
                                     ExprContext context)
 {
+   IRExpr* (*recur)(IRSB *sbOut, IRExpr* e, ExprContext exc);
+   recur = kc_instrument_expr_eval;
+
    IRDirty* di;
    switch (data->tag) {
       /* should not be seen outside of Vex */ 
@@ -499,38 +526,38 @@ static void kc_instrument_expr_eval(IRSB* sbOut,
                       eg. MAddF64r32(t1, t2, t3, t4)
       */
    case Iex_Qop:
-      kc_instrument_expr_eval(sbOut, data->Iex.Qop.details->arg1, Expr_Qop_Arg1);
-      kc_instrument_expr_eval(sbOut, data->Iex.Qop.details->arg2, Expr_Qop_Arg2);
-      kc_instrument_expr_eval(sbOut, data->Iex.Qop.details->arg3, Expr_Qop_Arg3);
-      kc_instrument_expr_eval(sbOut, data->Iex.Qop.details->arg4, Expr_Qop_Arg4);
+      recur(sbOut, data->Iex.Qop.details->arg1, Expr_Qop_Arg1);
+      recur(sbOut, data->Iex.Qop.details->arg2, Expr_Qop_Arg2);
+      recur(sbOut, data->Iex.Qop.details->arg3, Expr_Qop_Arg3);
+      recur(sbOut, data->Iex.Qop.details->arg4, Expr_Qop_Arg4);
       break;
       /* A ternary operation.
          ppIRExpr output: <op>(<arg1>, <arg2>, <arg3>),
                       eg. MulF64(1, 2.0, 3.0)
       */
    case Iex_Triop:
-      kc_instrument_expr_eval(sbOut, data->Iex.Triop.details->arg1, Expr_Triop_Arg1);
-      kc_instrument_expr_eval(sbOut, data->Iex.Triop.details->arg2, Expr_Triop_Arg2);
-      kc_instrument_expr_eval(sbOut, data->Iex.Triop.details->arg3, Expr_Triop_Arg3);
+      recur(sbOut, data->Iex.Triop.details->arg1, Expr_Triop_Arg1);
+      recur(sbOut, data->Iex.Triop.details->arg2, Expr_Triop_Arg2);
+      recur(sbOut, data->Iex.Triop.details->arg3, Expr_Triop_Arg3);
       break;
       /* A binary operation.
          ppIRExpr output: <op>(<arg1>, <arg2>), eg. Add32(t1,t2)
       */
    case Iex_Binop:
-      kc_instrument_expr_eval(sbOut, data->Iex.Binop.arg1, Expr_Binop_Arg1);
-      kc_instrument_expr_eval(sbOut, data->Iex.Binop.arg2, Expr_Binop_Arg2);
+      recur(sbOut, data->Iex.Binop.arg1, Expr_Binop_Arg1);
+      recur(sbOut, data->Iex.Binop.arg2, Expr_Binop_Arg2);
       break;
       /* A unary operation.
          ppIRExpr output: <op>(<arg>), eg. Neg8(t1)
       */
    case Iex_Unop:
-      kc_instrument_expr_eval(sbOut, data->Iex.Unop.arg, Expr_Unop_Arg);
+      recur(sbOut, data->Iex.Unop.arg, Expr_Unop_Arg);
       break;
       /* A load from memory -- a normal load, not a load-linked.
          ppIRExpr output: LD<end>:<ty>(<addr>), eg. LDle:I32(t1)
       */
    case Iex_Load:
-      kc_instrument_expr_eval(sbOut, data->Iex.Load.addr, Expr_Load_Addr);
+      recur(sbOut, data->Iex.Load.addr, Expr_Load_Addr);
       break;
       /* A constant-valued expression.
          ppIRExpr output: <con>, eg. 0x4:I32
@@ -543,9 +570,9 @@ static void kc_instrument_expr_eval(IRSB* sbOut,
                          eg. ITE(t6,t7,t8)
       */
    case Iex_ITE:
-      kc_instrument_expr_eval(sbOut, data->Iex.ITE.cond, Expr_ITE_Cond);
-      kc_instrument_expr_eval(sbOut, data->Iex.ITE.iftrue, Expr_ITE_IfTrue);
-      kc_instrument_expr_eval(sbOut, data->Iex.ITE.iffalse, Expr_ITE_IfFalse);
+      recur(sbOut, data->Iex.ITE.cond, Expr_ITE_Cond);
+      recur(sbOut, data->Iex.ITE.iftrue, Expr_ITE_IfTrue);
+      recur(sbOut, data->Iex.ITE.iffalse, Expr_ITE_IfFalse);
       break;
 
       /* A call to a pure (no side-effects) helper C function.
@@ -585,6 +612,15 @@ static void kc_instrument_put ( IRSB* sbOut,
    IRType    ty         = typeOfIRExpr(sbOut->tyenv, put_data);
    Int       put_size   = sizeofIRType(ty);
    IRDirty*  di;
+
+   if (START_BEING_LOUD ||
+       (put_data->tag != Iex_RdTmp && put_data->tag != Iex_Const)) {
+      VG_(printf)("kc_instrument_put");
+      VG_(printf)(" offset: %d", put_offset);
+      VG_(printf)(" data: "); ppIRExpr(put_data);
+      VG_(printf)("\n");
+   }
+
    if (ty == Ity_I64) {
       di = unsafeIRDirty_0_N(
          0,
@@ -620,9 +656,30 @@ static void kc_instrument_puti ( IRSB* sbOut,
     * register."  So for the demo, we cheat here and don't bother about the
     * cases that are not the right size.
     */
+
+   /* Idea: I'm seeing some wonkiness here. I wonder if its because I'm
+    * passing the `puti_data` and the `puti_ix` expressions directly into the unsafeIRDirty_0_N call.
+    * IRExpr is supposed to be expressions without side-effects, so I had been
+    * assuming I could throw those expressions in there without ill-effect. But maybe I am
+    * not accounting enough for the side-effects of the unsafe call itself
+    * causing the IRExpr to change the result it computes? Perhaps I need to
+    * first do the pure computation, store its result in a temp, and then pass
+    * that temp into the unsafe call (as well as construct a fresh form of the
+    * original statement that now uses those newly constructed temps?)
+    */
    IRType    ty         = typeOfIRExpr(sbOut->tyenv, puti_data);
    Int       puti_size   = sizeofIRType(ty);
    IRDirty*  di;
+
+   if (START_BEING_LOUD ||
+       (puti_ix->tag != Iex_RdTmp && puti_ix->tag != Iex_Const) ||
+       (puti_data->tag != Iex_RdTmp && puti_data->tag != Iex_Const)) {
+      VG_(printf)("kc_instrument_puti");
+      VG_(printf)(" ix: "); ppIRExpr(puti_ix);
+      VG_(printf)(" data: "); ppIRExpr(puti_data);
+      VG_(printf)("\n");
+   }
+
    if (ty == Ity_I64) {
       di = unsafeIRDirty_0_N(
          0,
@@ -835,6 +892,16 @@ static void kc_instrument_store ( IRSB* sbOut,
       if (store_type != Ity_I64) {
          store_data = assignNew('V', sbOut, Ity_I64, store_data);
       }
+
+      if (START_BEING_LOUD ||
+          (store_addr->tag != Iex_RdTmp && store_addr->tag != Iex_Const) ||
+          (store_data->tag != Iex_RdTmp && store_data->tag != Iex_Const)) {
+         VG_(printf)("kc_instrument_store");
+         VG_(printf)(" addr: "); ppIRExpr(store_addr);
+         VG_(printf)(" data: "); ppIRExpr(store_data);
+         VG_(printf)("\n");
+      }
+
       di = unsafeIRDirty_0_N(
          0,
          "rs_trace_store",
@@ -1070,6 +1137,7 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 
    switch(arg[0]) {
    case VG_USERREQ__BORROW_MUT: {
+      START_BEING_LOUD = 1;
       handled = rs_client_request_borrow_mut(tid, arg, ret);
       break;
    }
@@ -1108,6 +1176,7 @@ static Bool kc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
       break;
    }
    case VG_USERREQ__PRINT_TAG_OF: {
+      START_BEING_LOUD = 1;
       handled = rs_client_request_print_tag_of(tid, arg, ret);
       break;
    }
