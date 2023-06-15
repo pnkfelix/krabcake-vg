@@ -470,10 +470,23 @@ pub extern "C" fn rs_client_request_print_stack_of(
         let name_addr = *arg.offset(2);
         if let Some(x) = STACKS.if_addr_has_stack_then(client_addr, |stack| {
             vgPlain_umsg(
-                b"print_stack_of `%s` (0x%08llx): [_, _]\n\0".as_ptr() as *const c_char,
+                b"print_stack_of `%s` (0x%08llx): [\0".as_ptr() as *const c_char,
                 name_addr,
                 STACKS.get_stack_dbg_id_or_assign(client_addr),
             );
+            let mut seen_any = false;
+            for item in &stack.items {
+                if seen_any {
+                    vgPlain_umsg(b", \0".as_ptr() as *const c_char);
+                }
+                match item {
+                    Item::Unique(tag) => {
+                        vgPlain_umsg(b"Unique(%lld)\0".as_ptr() as *const c_char, tag.0);
+                    }
+                }
+                seen_any = true;
+            }
+            vgPlain_umsg(b"]\n\0".as_ptr() as *const c_char);
             true
         }) {
             x
