@@ -448,7 +448,7 @@ pub extern "C" fn rs_client_request_print_tag_of(
             vgPlain_umsg(
                 b"print_tag_of `%s` (0x%08llx), no tag found\n\0".as_ptr() as *const c_char,
                 name_addr,
-                address_of_interest,
+                STACKS.get_stack_dbg_id_or_assign(address_of_interest),
             );
             true
         }
@@ -482,7 +482,7 @@ pub extern "C" fn rs_client_request_print_stack_of(
                 vgPlain_umsg(
                     b"print_stack_of `%s` (0x%08llx), no stack found\n\0".as_ptr() as *const c_char,
                     name_addr,
-                    client_addr,
+                    STACKS.get_stack_dbg_id_or_assign(client_addr),
                 );
             }
             true
