@@ -20,7 +20,7 @@ pub enum Item {
 impl fmt::Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Item::Unique(tag) => ::core::write!(f, "Unique({})", tag.0)
+            Item::Unique(tag) => ::core::write!(f, "Unique({})", tag.0),
         }
     }
 }

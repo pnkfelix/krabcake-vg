@@ -468,7 +468,7 @@ impl fmt::Write for VgPlainUmsgWriter {
         // to the user, so we don't need to spend much time figuring out ieal
         // chunking sizes.
 
-        let mut buf: [u8; CHUNK_SIZE+1] = [b'\0'; CHUNK_SIZE+1];
+        let mut buf: [u8; CHUNK_SIZE + 1] = [b'\0'; CHUNK_SIZE + 1];
         let bytes = s.as_bytes();
         for chunk in bytes.chunks(CHUNK_SIZE) {
             // set aside destination slice in buf
@@ -508,17 +508,22 @@ pub extern "C" fn rs_client_request_print_stack_of(
         let name = c_str_name.to_str().unwrap();
         let mut w = VgPlainUmsgWriter;
         if let Some(x) = STACKS.if_addr_has_stack_then(client_addr, |stack| {
-            core::write!(w, "print_stack_of `{}` (0x{:08x}): {}\n",
-                         name,
-                         STACKS.get_stack_dbg_id_or_assign(client_addr),
-                         stack);
+            core::write!(
+                w,
+                "print_stack_of `{}` (0x{:08x}): {}\n",
+                name,
+                STACKS.get_stack_dbg_id_or_assign(client_addr),
+                stack
+            );
             true
         }) {
             x
         } else {
-            core::write!(w, "print_stack_of `{}` (0x{:08x}), no stack found\n",
-                         name,
-                         STACKS.get_stack_dbg_id_or_assign(client_addr),
+            core::write!(
+                w,
+                "print_stack_of `{}` (0x{:08x}), no stack found\n",
+                name,
+                STACKS.get_stack_dbg_id_or_assign(client_addr),
             );
             true
         }
