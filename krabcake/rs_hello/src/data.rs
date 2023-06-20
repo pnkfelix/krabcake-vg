@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use core::fmt;
 
 use crate::{vg_addr, COUNTER, CTX, STACKS};
 
@@ -16,6 +17,14 @@ pub enum Item {
     Unique(Tag),
 }
 
+impl fmt::Display for Item {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Item::Unique(tag) => ::core::write!(f, "Unique({})", tag.0),
+        }
+    }
+}
+
 impl Item {
     pub fn num(&self) -> u64 {
         match *self {
@@ -30,6 +39,21 @@ pub struct Stack {
     // Should only be used when opted into with `--normalize-output`
     pub id: u64,
     pub items: Vec<Item>,
+}
+
+impl fmt::Display for Stack {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        let mut seen_any = false;
+        for item in &self.items {
+            if seen_any {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", item)?;
+            seen_any = true;
+        }
+        write!(f, "]")
+    }
 }
 
 impl Stack {

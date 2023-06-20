@@ -6,6 +6,7 @@
 use core::ffi::{
     c_char, c_int, c_longlong, c_size_t, c_uchar, c_uint, c_ulong, c_ulonglong, c_void, CStr,
 };
+use core::fmt::{self, Write as _};
 use core::panic::PanicInfo;
 use core::ptr;
 
@@ -448,10 +449,41 @@ pub extern "C" fn rs_client_request_print_tag_of(
             vgPlain_umsg(
                 b"print_tag_of `%s` (0x%08llx), no tag found\n\0".as_ptr() as *const c_char,
                 name_addr,
-                address_of_interest,
+                STACKS.get_stack_dbg_id_or_assign(address_of_interest),
             );
             true
         }
+    }
+}
+
+struct VgPlainUmsgWriter;
+
+impl fmt::Write for VgPlainUmsgWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        assert!(s.is_ascii());
+
+        const CHUNK_SIZE: usize = 128;
+        // Everything below should work for any positive value for CHUNK_SIZE
+        // (including 1). We do not actually expect to ever emit long messages
+        // to the user, so we don't need to spend much time figuring out ieal
+        // chunking sizes.
+
+        let mut buf: [u8; CHUNK_SIZE + 1] = [b'\0'; CHUNK_SIZE + 1];
+        let bytes = s.as_bytes();
+        for chunk in bytes.chunks(CHUNK_SIZE) {
+            // set aside destination slice in buf
+            let byte_count = chunk.len();
+            let (dest, follow) = buf.split_at_mut(byte_count);
+            // copy exactly the chunk into the destination
+            dest.copy_from_slice(chunk);
+            // make sure its null-terminated
+            follow[0] = b'\0';
+            // now print the chunk, with the copied bytes, out.
+            unsafe {
+                vgPlain_umsg("%s\0".as_ptr() as *const c_char, buf.as_ptr());
+            }
+        }
+        Ok(())
     }
 }
 
@@ -468,23 +500,31 @@ pub extern "C" fn rs_client_request_print_stack_of(
             *stash_addr as vg_addr
         };
         let name_addr = *arg.offset(2);
+
+        // For future work, We might consider passing a (ptr,len) pair as the
+        // name (i.e. a `&str` mapped to two parameters) rather than a
+        // null-terminated c-string. But for now this is easy enough.
+        let c_str_name = CStr::from_ptr(name_addr as *const i8);
+        let name = c_str_name.to_str().unwrap();
+        let mut w = VgPlainUmsgWriter;
         if let Some(x) = STACKS.if_addr_has_stack_then(client_addr, |stack| {
-            vgPlain_umsg(
-                b"print_stack_of `%s` (0x%08llx): [_, _]\n\0".as_ptr() as *const c_char,
-                name_addr,
+            core::write!(
+                w,
+                "print_stack_of `{}` (0x{:08x}): {}\n",
+                name,
                 STACKS.get_stack_dbg_id_or_assign(client_addr),
+                stack
             );
             true
         }) {
             x
         } else {
-            unsafe {
-                vgPlain_umsg(
-                    b"print_stack_of `%s` (0x%08llx), no stack found\n\0".as_ptr() as *const c_char,
-                    name_addr,
-                    client_addr,
-                );
-            }
+            core::write!(
+                w,
+                "print_stack_of `{}` (0x{:08x}), no stack found\n",
+                name,
+                STACKS.get_stack_dbg_id_or_assign(client_addr),
+            );
             true
         }
     }
