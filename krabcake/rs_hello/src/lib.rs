@@ -500,6 +500,10 @@ pub extern "C" fn rs_client_request_print_stack_of(
             *stash_addr as vg_addr
         };
         let name_addr = *arg.offset(2);
+
+        // For future work, We might consider passing a (ptr,len) pair as the
+        // name (i.e. a `&str` mapped to two parameters) rather than a
+        // null-terminated c-string. But for now this is easy enough.
         let c_str_name = CStr::from_ptr(name_addr as *const i8);
         let name = c_str_name.to_str().unwrap();
         let mut w = VgPlainUmsgWriter;
