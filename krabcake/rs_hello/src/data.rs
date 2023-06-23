@@ -1,63 +1,77 @@
 use alloc::{string::String, vec::Vec};
-use core::fmt;
+use core::{ffi::c_char, fmt, fmt::Write, writeln};
 
-use crate::{vg_addr, vg_ulong, COUNTER, CTX, STACKS};
+use crate::{vgPlain_dmsg, vg_addr, vg_long, vg_ulong, VgPlainUmsgWriter, COUNTER, CTX, STACKS};
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Counter(u64);
+
+impl Counter {
+    pub const fn new() -> Counter {
+        Counter(0)
+    }
+
+    pub fn next(self) -> Counter {
+        Counter(self.0 + 1)
+    }
+
+    pub fn get(self) -> u64 {
+        // FIXME: Replace with assert when panics have stacktraces
+        if self.0 == 0 {
+            let mut w = VgPlainUmsgWriter;
+            writeln!(
+                w,
+                "Counter::get - Attempted to access counter with value of zero! This is a bug."
+            );
+            panic!("Counter::get - Attempted to access counter with value of zero! This is a bug.");
+        }
+        self.0
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Tag {
+    Counter(Counter),
     Bottom,
-    Id(u64),
 }
 
 impl Tag {
-    pub fn next(self) -> Option<Tag> {
-        self.id().map(|id| Tag::Id(id + 1))
-    }
-
-    pub fn id(self) -> Option<u64> {
-        match self {
-            Tag::Id(id) => Some(id),
-            Tag::Bottom => None,
-        }
-    }
-
     pub fn s(&self) -> String {
         alloc::format!("{self:?}\0")
     }
 
-    pub fn to_vg_ulong(self) -> vg_ulong {
-        match self.id() {
-            Some(id) => {
-                assert_ne!(id, 0);
-                id
-            }
-            None => 0,
-        }
+    pub fn to_shadow_state(self) -> vg_ulong {
+        let res = match self {
+            Tag::Counter(ctr) => (ctr.0 << 4) as vg_ulong,
+            Tag::Bottom => 1,
+        };
+        // let mut w = VgPlainUmsgWriter;
+        // core::writeln!(w, "to_shadow_state: {self:?} -> {res:#0x}, {res:#0b}");
+        res
+    }
+
+    pub fn from_shadow_state(ctr: vg_ulong) -> Tag {
+        let res = if ctr == 1 {
+            Tag::Bottom
+        } else {
+            Tag::Counter(Counter(ctr >> 4))
+        };
+        // let mut w = VgPlainUmsgWriter;
+        // core::writeln!(w, "from_shadow_state: {ctr:#0x}, {ctr:#0b} -> {res:?}");
+        res
     }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Item {
     Unique(Tag),
-    SharedReadWrite,
+    SharedRW,
 }
-
-impl fmt::Display for Item {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Item::Unique(Tag::Id(id)) => ::core::write!(f, "Unique({})", id),
-            Item::Unique(Tag::Bottom) => ::core::write!(f, "Bottom"),
-            Item::SharedReadWrite => ::core::write!(f, "SharedRW"),
-        }
-    }
-}
-
 impl Item {
-    pub fn num(&self) -> u64 {
-        match *self {
-            Item::Unique(Tag::Id(val)) => val,
-            Item::Unique(Tag::Bottom) => unimplemented!(),
-            Item::SharedReadWrite => unimplemented!(),
+    pub(crate) fn from_tag(tag: Tag) -> Item {
+        match tag {
+            Tag::Counter(ctr) => Item::Unique(tag),
+            Tag::Bottom => Item::SharedRW,
         }
     }
 }
@@ -75,11 +89,11 @@ impl fmt::Display for Stack {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[")?;
         let mut seen_any = false;
-        for item in &self.items {
+        for tag in &self.items {
             if seen_any {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", item)?;
+            write!(f, "{:?}", tag)?;
             seen_any = true;
         }
         write!(f, "]")
@@ -114,13 +128,13 @@ impl Stacks {
         unsafe {
             for (idx, stack) in &mut self.0.iter_mut().enumerate() {
                 if stack.addr == addr {
-                    stack.items.push(Item::Unique(COUNTER));
+                    stack.items.push(Item::Unique(Tag::Counter(COUNTER)));
                     return idx;
                 }
             }
 
             let mut items = Vec::new();
-            items.push(Item::Unique(COUNTER));
+            items.push(Item::Unique(Tag::Counter(COUNTER)));
             self.add_new_stack(addr, items)
         }
     }
@@ -198,7 +212,7 @@ mod tests {
     fn new_stacks(addr: vg_addr) -> Stacks {
         unsafe {
             let mut items = Vec::new();
-            items.push(Item::Unique(COUNTER));
+            items.push(Item::Unique(Tag::Counter(COUNTER)));
             let stack = Stack {
                 addr,
                 id: STARTING_DBG_ID,

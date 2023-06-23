@@ -8,14 +8,17 @@ use core::ffi::{
 };
 use core::fmt::{self, Write as _};
 use core::panic::PanicInfo;
-use core::ptr;
+use core::{ptr, writeln};
 
 extern crate alloc;
 use core::alloc::{GlobalAlloc, Layout};
 
+use alloc::string::String;
 // Can now import and use anything in alloc
 use alloc::vec::Vec;
-use data::{Item, Stack, Tag};
+use data::{Counter, Stack, Tag};
+
+use crate::data::Item;
 
 use self::data::Stacks;
 use self::vex_ir::IROp;
@@ -145,7 +148,8 @@ static mut THREAD_ID: c_uint = 0;
 static mut CTX: Context = Context {
     normalize_output: false,
 };
-static mut COUNTER: Tag = Tag::Id(0);
+
+static mut COUNTER: Counter = Counter::new();
 static mut STACKS: Stacks = Stacks(Vec::new());
 
 // FIXME: Need to more clearly distinguish between addresses and
@@ -302,13 +306,26 @@ pub extern "C" fn rs_client_request_borrow_mut(
 ) -> bool {
     unsafe {
         THREAD_ID = thread_id;
-        COUNTER = COUNTER.next().unwrap();
+        COUNTER = COUNTER.next();
         let stash_addr = *arg.offset(1);
         let borrowing_addr = *stash_addr as vg_addr;
         let stash_addr = stash_addr as vg_addr;
         let stack_idx = STACKS.push(borrowing_addr);
-        let stack = STACKS.0.get(stack_idx).unwrap();
-        TRACKED_ADDRS.push((stash_addr, COUNTER));
+        let stack = {
+            let temp = STACKS.0.get(stack_idx);
+            match temp {
+                Some(item) => item,
+                // FIXME: Replace with assert when panics have stacktraces
+                None => {
+                    vgPlain_dmsg(
+                        "Could not get stack at index %d\n\0".as_ptr() as *const c_char,
+                        stack_idx,
+                    );
+                    panic!("Could not get stack at index {stack_idx}");
+                }
+            }
+        };
+        TRACKED_ADDRS.push((stash_addr, Tag::Counter(COUNTER)));
         vgPlain_dmsg(
             "lib.rs: handle client request BORROW_MUT. borrowing_addr: 0x%08llx\n\0".as_ptr()
                 as *const c_char,
@@ -316,11 +333,12 @@ pub extern "C" fn rs_client_request_borrow_mut(
             ret,
         );
         assert!(STACKED_BORROW_EVENT.is_none());
+        // FIXME(bryangarza): Delete this STACKED_BORROW_EVENT code later (no longer used for anything)
         STACKED_BORROW_EVENT = Some(SbEvent(
             SbEventKind::BorrowMut,
             stash_addr,
             borrowing_addr,
-            COUNTER,
+            Tag::Counter(COUNTER),
         ));
     }
     true
@@ -351,7 +369,7 @@ pub extern "C" fn rs_client_request_as_raw(
         let borrowed_addr = *stash_addr as vg_addr;
         let stash_addr = stash_addr as vg_addr;
         let dbg_id = STACKS.assume_addr_has_stack_then(borrowed_addr, |stack| {
-            stack.items.push(Item::SharedReadWrite);
+            stack.items.push(Item::SharedRW);
             stack.dbg_id()
         });
         TRACKED_ADDRS.push((stash_addr, Tag::Bottom));
@@ -567,8 +585,32 @@ type vg_long = c_longlong;
 #[allow(non_camel_case_types)]
 type vg_size_t = c_size_t;
 
-unsafe fn check_use_1(addr: vg_addr, shadow_addr: vg_ulong) {
-    assert!(shadow_addr != 0);
+// Pop from the stack until we encounter the given Item
+fn process_stack(stack: &mut Stack, item: Item) -> (u64, bool, usize, usize) {
+    let mut w = VgPlainUmsgWriter;
+    let before_len = stack.items.len();
+    while let Some(last) = stack.items.last() {
+        writeln!(w, "tag search seeking {item:?} and saw {last:?}");
+        if last == &item {
+            let after_len = stack.items.len();
+            return (stack.dbg_id(), true, before_len, after_len);
+        } else {
+            stack.items.pop();
+        }
+    }
+    let after_len = stack.items.len();
+    if before_len != after_len {
+        writeln!(
+            w,
+            "stack.tags has changed {before_len} -> {after_len}, it's now: {:?}",
+            stack.items
+        );
+    }
+    (stack.dbg_id(), false, before_len, after_len)
+}
+
+unsafe fn check_use(addr: vg_addr, tag: Tag) {
+    let mut w = VgPlainUmsgWriter;
 
     // Confim that this access is legal; i.e. that:
     //
@@ -579,44 +621,18 @@ unsafe fn check_use_1(addr: vg_addr, shadow_addr: vg_ulong) {
     //
     // 3. as a side-effect of the access, we must pop all entries that
     //    lay above the aforementioned Unique(T).
-    //TODO(bryangarza): Have to bring this fn back from the dead???
-    let tag = Tag::Id(shadow_addr);
-    let tag_s = tag.s();
-    let lookup = STACKS.if_addr_has_stack_then(addr, |stack| {
-        let before_len = stack.items.len();
-        while let Some(last) = stack.items.last() {
-            msg!(
-                b"tag search seeking %d and saw %d\n\0",
-                shadow_addr,
-                last.num()
-            );
-            if last == &Item::Unique(tag) {
-                let after_len = stack.items.len();
-                return (stack.dbg_id(), true, before_len, after_len);
-            } else {
-                stack.items.pop();
-            }
-        }
-        let after_len = stack.items.len();
-        (stack.dbg_id(), false, before_len, after_len)
-    });
+    let item = Item::from_tag(tag);
+    let lookup = STACKS.if_addr_has_stack_then(addr, |stack| process_stack(stack, item));
     match lookup {
         None => {
-            alert!(b"ALERT no stack for address 0x%08llx even though we are accessing it via pointer with tag %s\n\0",
-                           STACKS.get_stack_dbg_id_or_assign(addr),
-                           tag_s.as_ptr());
+            let stack_dbg_id = STACKS.get_stack_dbg_id_or_assign(addr);
+            writeln!(w, "ALERT no stack for address {stack_dbg_id:#08x} even though we are accessing it via pointer with tag {tag:?}");
         }
         Some((stack_dbg_id, false, _, _)) => {
-            alert!(b"ALERT could not find tag in stack for address 0x%08llx even though we are accessing it via pointer with tag %s\n\0",
-                           stack_dbg_id,
-                           tag_s.as_ptr());
+            writeln!(w, "ALERT could not find tag in stack for address {stack_dbg_id:#08x} even though we are accessing it via pointer with tag {tag:?}");
         }
         Some((stack_dbg_id, true, before_len, after_len)) => {
-            msg!(b"found tag in stack for address 0x%08llx when accessing via pointer with tag %s; stack len before: %d after: %d\n\0",
-                         stack_dbg_id,
-                         tag_s.as_ptr(),
-                         before_len,
-                         after_len);
+            writeln!(w, "found tag in stack for address {stack_dbg_id:#08x} when accessing via pointer with tag {tag:?}; stack len before: {before_len} after: {after_len}");
         }
     }
 }
@@ -665,7 +681,7 @@ pub extern "C" fn rs_trace_wrtmp(lhs_tmp: vg_uint, s1: vg_long) {
     unsafe {
         if s1 != 0 {
             msg!(b"rs_trace_wrtmp lhs_tmp: %u s1: %d\n\0", lhs_tmp, s1,);
-            TRACKED_TEMPS.push((lhs_tmp, Tag::Id(s1 as u64)));
+            TRACKED_TEMPS.push((lhs_tmp, Tag::from_shadow_state(s1 as vg_ulong)));
         } else {
             TRACKED_TEMPS.retain(|entry| entry.0 != lhs_tmp);
         }
@@ -744,7 +760,7 @@ pub extern "C" fn rs_trace_store(
             // A non-trivial shadow on the address means this was a
             // *tagged* pointer; need to confirm this access is legal
             // (and update the stack to reflect a use via this tag).
-            check_use_1(addr, shadow_addr);
+            check_use(addr, Tag::from_shadow_state(shadow_addr));
         }
 
         if shadow_data != 0 {
@@ -753,7 +769,7 @@ pub extern "C" fn rs_trace_store(
                 addr,
                 shadow_data,
             );
-            TRACKED_ADDRS.push((addr, Tag::Id(shadow_data as u64)));
+            TRACKED_ADDRS.push((addr, Tag::from_shadow_state(shadow_data)));
         } else {
             TRACKED_ADDRS.retain(|a| a.0 != addr);
         }
@@ -841,7 +857,7 @@ pub extern "C" fn rs_trace_put(put_offset: vg_ulong, data: vg_ulong, shadow_data
                 STACKS.get_stack_dbg_id_or_assign(data as vg_addr),
                 shadow_data,
             );
-            TRACKED_GREGS.push((put_offset, Tag::Id(shadow_data as u64)));
+            TRACKED_GREGS.push((put_offset, Tag::from_shadow_state(shadow_data)));
         } else {
             TRACKED_GREGS.retain(|entry| entry.0 != put_offset);
         }
@@ -982,7 +998,7 @@ pub extern "C" fn rs_shadow_rdtmp(tmp: vg_long) -> vg_long {
                 tmp,
                 tag_.as_ptr(),
             );
-            return tag.to_vg_ulong() as vg_long;
+            return tag.to_shadow_state() as vg_long;
         }
     }
     return 0;
@@ -1151,7 +1167,7 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
                     tag_s.as_ptr(),
                 );
                 STACKED_BORROW_EVENT = None;
-                memory_shadow_value_hack = tag.to_vg_ulong() as vg_long;
+                memory_shadow_value_hack = tag.to_shadow_state() as vg_long;
             } else {
                 memory_shadow_value_hack = 0;
             }
@@ -1160,12 +1176,12 @@ pub extern "C" fn rs_shadow_load(addr: vg_addr, s1: vg_long) -> vg_long {
         }
 
         if s1 != 0 {
-            check_use_1(addr, s1 as u64);
+            check_use(addr, Tag::from_shadow_state(s1 as u64));
         }
     }
 
     memory_shadow_value_core =
-        if_addr_tracked_then(addr as vg_addr, |tag| tag.to_vg_ulong() as vg_long).unwrap_or(0);
+        if_addr_tracked_then(addr as vg_addr, |tag| tag.to_shadow_state() as vg_long).unwrap_or(0);
 
     // When we remove the STACKED_BORROW_EVENT hack, all of this will be
     // replaced with just returning memory_shadow_value_core
@@ -1237,7 +1253,7 @@ pub extern "C" fn rs_shadow_get(offset: vg_long, ty: vg_long) -> vg_long {
                 tag_.as_ptr()
             );
         }
-        ret = tag.to_vg_ulong() as vg_long;
+        ret = tag.to_shadow_state() as vg_long;
     }
 
     return ret;
