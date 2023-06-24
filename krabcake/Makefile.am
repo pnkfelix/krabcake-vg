@@ -34,12 +34,16 @@ $(RSHELLO_TARGET)/nightly_installed:
 $(RSHELLO_TARGET_DEBUG64)/librs_hello.amd64.a: $(RSHELLO_DIR)/src/lib.rs $(RSHELLO_DIR)/src/*.rs $(RSHELLO_TARGET)/nightly_installed
 	mkdir -p $(dir $@)
 	rustup target add x86_64-unknown-linux-gnu
-	rustup run nightly rustc -g --edition=2021 --target=x86_64-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
+# When `-C` flag to cargo is stable, use it here instead of manually chdir'ing
+	cd $(RSHELLO_DIR) && cargo build --target=x86_64-unknown-linux-gnu
+	cp $(RSHELLO_DIR)/target/x86_64-unknown-linux-gnu/debug/librs_hello.a $@
 
 $(RSHELLO_TARGET_DEBUG32)/librs_hello.x86.a: $(RSHELLO_DIR)/src/lib.rs $(RSHELLO_DIR)/src/*.rs $(RSHELLO_TARGET)/nightly_installed
 	mkdir -p $(dir $@)
 	rustup target add i586-unknown-linux-gnu
-	rustup run nightly rustc -g --edition=2021 --target=i586-unknown-linux-gnu --crate-type=staticlib -C panic=abort $< -o $@
+# When `-C` flag to cargo is stable, use it here instead of manually chdir'ing
+	cd $(RSHELLO_DIR) && cargo build --target=i586-unknown-linux-gnu
+	cp $(RSHELLO_DIR)/target/i586-unknown-linux-gnu/debug/librs_hello.a $@
 
 clean-local:
 	cd $(srcdir)/$(RSHELLO_DIR); cargo clean
