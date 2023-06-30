@@ -310,6 +310,12 @@ pub extern "C" fn rs_client_request_borrow_mut(
         let stash_addr = *arg.offset(1);
         let borrowing_addr = *stash_addr as vg_addr;
         let stash_addr = stash_addr as vg_addr;
+        // As dictated by the NEW-MUTABLE-REF rule (section 3.2),
+        // a borrow of an existing tagged pointer value must first
+        // go through the USE check itself.
+        if let Some(tag) = if_addr_tracked_then(stash_addr, |tag| tag) {
+            check_use(borrowing_addr, tag);
+        }
         let stack_idx = STACKS.push(borrowing_addr);
         let stack = {
             let temp = STACKS.0.get(stack_idx);
