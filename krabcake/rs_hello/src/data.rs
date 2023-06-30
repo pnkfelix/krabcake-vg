@@ -35,9 +35,18 @@ pub enum Tag {
     Bottom,
 }
 
+impl fmt::Display for Tag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Tag::Counter(c) => write!(f, "{}", c.0),
+            Tag::Bottom => write!(f, "bot"),
+        }
+    }
+}
+
 impl Tag {
     pub fn s(&self) -> String {
-        alloc::format!("{self:?}\0")
+        alloc::format!("{self}\0")
     }
 
     pub fn to_shadow_state(self) -> vg_ulong {
@@ -76,6 +85,18 @@ impl Item {
     }
 }
 
+impl fmt::Display for Item {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // FIXME: we probably can just print the number without
+            // including the "Unique(...)" here. (What will be best
+            // for our customers to understand?)
+            Item::Unique(t) => write!(f, "Unique({})", t),
+            Item::SharedRW => write!(f, "SharedRW"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Stack {
     pub addr: vg_addr,
@@ -89,11 +110,11 @@ impl fmt::Display for Stack {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[")?;
         let mut seen_any = false;
-        for tag in &self.items {
+        for item in &self.items {
             if seen_any {
                 write!(f, ", ")?;
             }
-            write!(f, "{:?}", tag)?;
+            write!(f, "{}", item)?;
             seen_any = true;
         }
         write!(f, "]")

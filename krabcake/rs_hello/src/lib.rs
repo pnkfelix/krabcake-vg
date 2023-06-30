@@ -585,12 +585,16 @@ type vg_long = c_longlong;
 #[allow(non_camel_case_types)]
 type vg_size_t = c_size_t;
 
+static STACK_DEBUG: bool = false;
+
 // Pop from the stack until we encounter the given Item
 fn process_stack(stack: &mut Stack, item: Item) -> (u64, bool, usize, usize) {
     let mut w = VgPlainUmsgWriter;
     let before_len = stack.items.len();
     while let Some(last) = stack.items.last() {
-        writeln!(w, "tag search seeking {item:?} and saw {last:?}");
+        if STACK_DEBUG {
+            writeln!(w, "tag search seeking {item:?} and saw {last:?}");
+        }
         if last == &item {
             let after_len = stack.items.len();
             return (stack.dbg_id(), true, before_len, after_len);
@@ -600,11 +604,13 @@ fn process_stack(stack: &mut Stack, item: Item) -> (u64, bool, usize, usize) {
     }
     let after_len = stack.items.len();
     if before_len != after_len {
-        writeln!(
-            w,
-            "stack.tags has changed {before_len} -> {after_len}, it's now: {:?}",
-            stack.items
-        );
+        if STACK_DEBUG {
+            writeln!(
+                w,
+                "stack.tags has changed {before_len} -> {after_len}, it's now: {:?}",
+                stack.items
+            );
+        }
     }
     (stack.dbg_id(), false, before_len, after_len)
 }
@@ -626,13 +632,15 @@ unsafe fn check_use(addr: vg_addr, tag: Tag) {
     match lookup {
         None => {
             let stack_dbg_id = STACKS.get_stack_dbg_id_or_assign(addr);
-            writeln!(w, "ALERT no stack for address {stack_dbg_id:#08x} even though we are accessing it via pointer with tag {tag:?}");
+            writeln!(w, "ALERT no stack for address {stack_dbg_id:#08x} even though we are accessing it via pointer with tag {tag}");
         }
         Some((stack_dbg_id, false, _, _)) => {
-            writeln!(w, "ALERT could not find tag in stack for address {stack_dbg_id:#08x} even though we are accessing it via pointer with tag {tag:?}");
+            writeln!(w, "ALERT could not find tag in stack for address {stack_dbg_id:#08x} even though we are accessing it via pointer with tag {tag}");
         }
         Some((stack_dbg_id, true, before_len, after_len)) => {
-            writeln!(w, "found tag in stack for address {stack_dbg_id:#08x} when accessing via pointer with tag {tag:?}; stack len before: {before_len} after: {after_len}");
+            if STACK_DEBUG {
+                writeln!(w, "found tag in stack for address {stack_dbg_id:#08x} when accessing via pointer with tag {tag}; stack len before: {before_len} after: {after_len}");
+            }
         }
     }
 }
