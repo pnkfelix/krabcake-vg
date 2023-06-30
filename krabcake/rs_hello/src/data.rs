@@ -1,38 +1,82 @@
-use alloc::vec::Vec;
-use core::fmt;
+use alloc::{string::String, vec::Vec};
+use core::{ffi::c_char, fmt, fmt::Write, writeln};
 
-use crate::{vg_addr, COUNTER, CTX, STACKS};
+use crate::{vgPlain_dmsg, vg_addr, vg_long, vg_ulong, VgPlainUmsgWriter, COUNTER, CTX, STACKS};
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub struct Tag(pub u64);
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Counter(u64);
+
+impl Counter {
+    pub const fn new() -> Counter {
+        Counter(0)
+    }
+
+    pub fn next(self) -> Counter {
+        Counter(self.0 + 1)
+    }
+
+    pub fn get(self) -> u64 {
+        // FIXME: Replace with assert when panics have stacktraces
+        if self.0 == 0 {
+            let mut w = VgPlainUmsgWriter;
+            writeln!(
+                w,
+                "Counter::get - Attempted to access counter with value of zero! This is a bug."
+            );
+            panic!("Counter::get - Attempted to access counter with value of zero! This is a bug.");
+        }
+        self.0
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Tag {
+    Counter(Counter),
+    Bottom,
+}
 
 impl Tag {
-    pub fn next(self) -> Tag {
-        Tag(self.0 + 1)
+    pub fn s(&self) -> String {
+        alloc::format!("{self:?}\0")
+    }
+
+    pub fn to_shadow_state(self) -> vg_ulong {
+        let res = match self {
+            Tag::Counter(ctr) => (ctr.0 << 4) as vg_ulong,
+            Tag::Bottom => 1,
+        };
+        // let mut w = VgPlainUmsgWriter;
+        // core::writeln!(w, "to_shadow_state: {self:?} -> {res:#0x}, {res:#0b}");
+        res
+    }
+
+    pub fn from_shadow_state(ctr: vg_ulong) -> Tag {
+        let res = if ctr == 1 {
+            Tag::Bottom
+        } else {
+            Tag::Counter(Counter(ctr >> 4))
+        };
+        // let mut w = VgPlainUmsgWriter;
+        // core::writeln!(w, "from_shadow_state: {ctr:#0x}, {ctr:#0b} -> {res:?}");
+        res
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Item {
     Unique(Tag),
+    SharedRW,
 }
-
-impl fmt::Display for Item {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Item::Unique(tag) => ::core::write!(f, "Unique({})", tag.0),
-        }
-    }
-}
-
 impl Item {
-    pub fn num(&self) -> u64 {
-        match *self {
-            Item::Unique(Tag(val)) => val,
+    pub(crate) fn from_tag(tag: Tag) -> Item {
+        match tag {
+            Tag::Counter(ctr) => Item::Unique(tag),
+            Tag::Bottom => Item::SharedRW,
         }
     }
 }
 
+#[derive(Debug)]
 pub struct Stack {
     pub addr: vg_addr,
     // A unique ID, used in lieu of the address when printing
@@ -45,11 +89,11 @@ impl fmt::Display for Stack {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[")?;
         let mut seen_any = false;
-        for item in &self.items {
+        for tag in &self.items {
             if seen_any {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", item)?;
+            write!(f, "{:?}", tag)?;
             seen_any = true;
         }
         write!(f, "]")
@@ -84,18 +128,18 @@ impl Stacks {
         unsafe {
             for (idx, stack) in &mut self.0.iter_mut().enumerate() {
                 if stack.addr == addr {
-                    stack.items.push(Item::Unique(COUNTER));
+                    stack.items.push(Item::Unique(Tag::Counter(COUNTER)));
                     return idx;
                 }
             }
 
             let mut items = Vec::new();
-            items.push(Item::Unique(COUNTER));
+            items.push(Item::Unique(Tag::Counter(COUNTER)));
             self.add_new_stack(addr, items)
         }
     }
 
-    // Get the next ID (currently, it is just monotonically increasing)
+    // Get the next ID (currently, it's just monotonically increasing)
     fn next_id(&self) -> u64 {
         const INIT_NORM: u64 = 0x10000000;
         self.0.last().map(|stack| stack.id + 1).unwrap_or(INIT_NORM)
@@ -127,6 +171,19 @@ impl Stacks {
         None
     }
 
+    pub fn assume_addr_has_stack_then<T>(
+        &mut self,
+        addr: vg_addr,
+        process_stack: impl FnOnce(&mut Stack) -> T,
+    ) -> T {
+        for mut stack in &mut self.0 {
+            if stack.addr == addr {
+                return process_stack(&mut stack);
+            }
+        }
+        panic!("Expected addr {addr:x} to have a Stack but it does not!");
+    }
+
     pub fn get_stack_dbg_id_or_assign(&mut self, addr: vg_addr) -> u64 {
         unsafe {
             if CTX.normalize_output {
@@ -155,7 +212,7 @@ mod tests {
     fn new_stacks(addr: vg_addr) -> Stacks {
         unsafe {
             let mut items = Vec::new();
-            items.push(Item::Unique(COUNTER));
+            items.push(Item::Unique(Tag::Counter(COUNTER)));
             let stack = Stack {
                 addr,
                 id: STARTING_DBG_ID,
